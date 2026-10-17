@@ -1,0 +1,33 @@
+// roles.js — who can do what. The role switcher in views/topbar.js reads this.
+//
+// Roles are enforced in views/claim.js: a button for an action the current role
+// does not have is disabled and says why. Names come from packet.firm.staff.
+
+export const ROLES = {
+  preparer: { label: 'Preparer', staffId: 'st-01', can: ['note', 'adjust'] },
+  reviewer: { label: 'Reviewer', staffId: 'st-02', can: ['note', 'verify', 'signoff'] },
+  partner: { label: 'Partner', staffId: 'st-03', can: ['note', 'verify', 'signoff'] },
+  client: { label: 'Client', staffId: null, can: [] },
+  admin: { label: 'Administrator', staffId: 'st-05', can: ['reset'] },
+};
+
+export function actor(packet, roleKey) {
+  const role = ROLES[roleKey];
+  let name = role.label;
+  if (role.staffId) {
+    name = packet.firm.staff.find((s) => s.id === role.staffId)?.name ?? name;
+  } else if (roleKey === 'client') {
+    name = packet.household.people[0]?.name ?? name;
+  }
+  return { roleKey, role: role.label, name };
+}
+
+export const can = (roleKey, action) => ROLES[roleKey].can.includes(action);
+
+export const WHY_NOT = {
+  note: 'Your role cannot add notes.',
+  adjust: 'Only a preparer can adjust a number.',
+  verify: 'Only a reviewer or partner can verify a flagged check.',
+  signoff: 'Only a reviewer or partner can sign off.',
+  reset: 'Only the administrator can reset saved work.',
+};

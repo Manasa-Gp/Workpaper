@@ -1,0 +1,9 @@
+{
+  "name": "trail-workpaper-slice",
+  "version": "0.2.0",
+  "private": true,
+  "scripts": {
+    "start": "python3 backend/server.py",
+    "test": "node frontend/test/logic.test.mjs"
+  }
+}
