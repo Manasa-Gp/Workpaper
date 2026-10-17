@@ -7,6 +7,12 @@ A small web app that loads the Okafor-Lindqvist packet and shows one idea end to
 
 This is a slice, not the whole workpaper. See [What is and is not here](#what-is-and-is-not-here).
 
+**Live demo:** https://workpaper-ey72.onrender.com/
+
+- The demo runs on a free Render instance. It sleeps when idle, so the first load can take up to a minute.
+- Notes, adjustments and sign-offs are saved on the server, but the free instance forgets them when it restarts or redeploys. Treat the demo data as temporary.
+- There is no login. Use the role switcher at the top; roles are enforced on the screen only (see "Known limits").
+
 ---
 
 ## Run it
