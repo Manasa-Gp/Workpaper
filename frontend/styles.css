@@ -286,3 +286,22 @@ dl.record dl.record { margin: 0; padding-left: 8px; border-left: 2px solid var(-
 /* ---- freeze at filing ---- */
 .frozen { border-top: 1px solid var(--line, #ddd); margin-top: 0.5rem; padding-top: 0.25rem; }
 .amend-item { margin: 0.25rem 0 0.5rem; }
+
+/* Client's copy (views/clientcopy.js): read-only list of numbers. */
+.client-copy { border-bottom: 1px solid var(--line); padding: 8px 12px; }
+.client-copy > summary { cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.client-lines { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; margin: 4px 0 12px; }
+.client-lines dt { margin: 0; }
+.client-lines dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Notices (views/notice.js) and Next year (views/nextyear.js). */
+.notices, .next-year { border-bottom: 1px solid var(--line); padding: 8px 12px; }
+.notices > summary, .next-year > summary { cursor: pointer; font-weight: 600; }
+.notice-item { margin: 8px 0; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); }
+.notice-item p { margin: 4px 0; }
+.notice-line { margin: 6px 0 6px 8px; padding-left: 8px; border-left: 2px solid var(--line); }
+.notice-sources, .next-list { margin: 4px 0; padding-left: 18px; }
+.notice-text { width: 100%; margin-top: 8px; font: inherit; }
+.carry { width: 100%; border-collapse: collapse; margin: 4px 0 12px; font-variant-numeric: tabular-nums; }
+.carry th, .carry td { text-align: left; padding: 2px 6px; border-bottom: 1px solid var(--line); }
+.carry th:nth-child(n+2), .carry td:nth-child(n+2) { text-align: right; }

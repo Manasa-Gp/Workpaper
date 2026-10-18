@@ -14,6 +14,9 @@ import { inbox } from './inbox.js';
 import { approval } from './approval.js';
 import { activity } from './activity.js';
 import { filing } from './filing.js';
+import { clientCopy } from './clientcopy.js';
+import { notices } from './notice.js';
+import { nextYear } from './nextyear.js';
 
 const GLYPH = { pass: '✓', warn: '!', fail: '×', na: '·' };
 const WORDS = { pass: 'checks pass', warn: 'look at this', fail: 'a check failed', na: 'calculated, no source documents' };
@@ -42,7 +45,7 @@ export function renderPicker(el, state, on) {
 
   clear(el);
   el.append(
-    h('div', { class: 'panels' }, inbox(state, on), approval(state, on), filing(state, on), activity(state, on)),
+    h('div', { class: 'panels' }, inbox(state, on), approval(state, on), clientCopy(state), filing(state, on), notices(state, on), nextYear(state), activity(state, on)),
     h('div', { class: 'picker-head' },
       h('input', {
         id: 'filter', type: 'search', placeholder: 'Find a number, e.g. wages or F1040.1a', value: state.filter,
