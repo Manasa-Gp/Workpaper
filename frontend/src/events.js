@@ -161,6 +161,59 @@ export function inboxFor(events, roleLabel, today) {
   return items.sort((a, b) => rank(a) - rank(b) || (a.due ?? '9').localeCompare(b.due ?? '9') || a.at.localeCompare(b.at));
 }
 
+// ---------- presenting the return and the client's approval ----------
+
+/** Words for each kind of event, used by the line history and the activity list. */
+export const EVENT_LABEL = {
+  note: 'Note', adjust: 'Adjusted', signoff: 'Signed off', revert: 'Reverted', verify: 'Verified',
+  evidence: 'Evidence added', question: 'Question', answer: 'Answer', block: 'Review point', clear: 'Review point cleared',
+  assign: 'Assigned', done: 'Task done', present: 'Presented for approval', approve: 'Approved and signed',
+};
+
+/** Events about the whole return (not one line) are saved under this key. */
+export const RETURN_KEY = 'RETURN';
+
+/**
+ * A short fingerprint of every number on the return as it stands now (engine values plus adjustments).
+ * If any number changes, the fingerprint changes. Same numbers always give the same text, in any browser.
+ */
+export function returnFingerprint(lines, events) {
+  let hash = 0x811c9dc5; // FNV-1a, a small well-known hash
+  const text = lines
+    .filter((l) => l.value !== null && l.value !== undefined)
+    .map((l) => `${l.key}=${effectiveValue(l, events)}`)
+    .join('|');
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return `${hash.toString(16).padStart(8, '0')}-${text.length}`;
+}
+
+/** The people who must sign a joint return: the taxpayer and the spouse. */
+export const signersOf = (packet) => packet.household.people.filter((p) => p.role === 'taxpayer' || p.role === 'spouse').map((p) => p.name);
+
+/** Where the return is in approval: 'none' | 'presented' | 'partly' | 'approved' | 'stale' (numbers changed after presenting). */
+export function approvalState(events, fingerprint, signers) {
+  const presents = events.filter((e) => e.type === 'present');
+  const present = presents[presents.length - 1] ?? null;
+  if (!present) return { state: 'none', present: null, signed: [], missing: signers };
+  const signed = events.filter((e) => e.type === 'approve' && e.presents === present.id);
+  const names = new Set(signed.map((e) => e.signer));
+  const missing = signers.filter((n) => !names.has(n));
+  let state = 'presented';
+  if (present.fingerprint !== fingerprint) state = 'stale';
+  else if (!missing.length) state = 'approved';
+  else if (signed.length) state = 'partly';
+  return { state, present, signed, missing };
+}
+
+/** Review points still open on any line (they stop the return being presented). */
+export const allOpenReviewPoints = (events) => {
+  const cleared = new Set(events.filter((e) => e.type === 'clear').map((e) => e.clears));
+  return events.filter((e) => e.type === 'block' && !cleared.has(e.id));
+};
+
 /** The questions on a line, each with its answer (or null), oldest first. */
 export function questionsFor(events, claim) {
   return eventsFor(events, claim)

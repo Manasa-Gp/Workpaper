@@ -1,5 +1,5 @@
 """Run:  python3 backend/test_rules.py"""
-from rules import open_blocks, visible_events, can_read_views, can_replace_events, check_event, check_view
+from rules import signers, open_blocks, visible_events, can_read_views, can_replace_events, check_event, check_view
 
 
 def ev(role, kind):
@@ -99,4 +99,29 @@ for role in ("Preparer", "Reviewer", "Partner"):
     assert visible_events(work, role) == work
 for role in ("Client", "Administrator"):
     assert visible_events(work, role) == []                                        # internal to the firm
+# presenting the return and the client's approval (Form 8879)
+def pre(fp="F1", id_="p1", role="Reviewer"): return {**ev(role, "present"), "id": id_, "claim": "RETURN", "fingerprint": fp}
+def apr(signer="Ngozi Okafor", fp="F1", pid="p1", sig=None, role="Client"):
+    return {**ev(role, "approve"), "claim": "RETURN", "presents": pid, "fingerprint": fp, "signer": signer, "signature": sig or signer}
+assert signers() == ("Ngozi Okafor", "Erik Lindqvist")                             # read from the packet: taxpayer and spouse, not the dependent
+assert check_event(pre()) is None
+assert "may not" in check_event(pre(role="Preparer"))                              # preparer cannot present
+assert "may not" in check_event(pre(role="Client"))
+assert "fingerprint" in check_event({**pre(), "fingerprint": ""})
+assert "review point" in check_event(pre(), [blk()])                               # open review point anywhere stops it
+assert check_event(pre(), [blk(), clr()]) is None
+assert "already presented" in check_event(pre("F1", "p2"), [pre()])                # same numbers twice
+assert check_event(pre("F2", "p2"), [pre()]) is None                               # changed numbers: present again
+assert check_event(apr(), [pre()]) is None
+assert "may not" in check_event(apr(role="Reviewer"), [pre()])                     # only the client approves
+assert "not the return currently presented" in check_event(apr(), [])
+assert "not the return currently presented" in check_event(apr(pid="p1"), [pre(), pre("F2", "p2")])   # an older version
+assert "numbers have changed" in check_event(apr(fp="F0"), [pre()])
+assert "taxpayer or the spouse" in check_event(apr("Ada Lindqvist-Okafor"), [pre()])  # the dependent cannot sign
+assert "full name" in check_event(apr(sig="Nobody"), [pre()])
+assert check_event(apr(sig="  ngozi okafor "), [pre()]) is None                    # case and spaces do not matter
+assert "already signed" in check_event(apr(), [pre(), apr()])
+assert check_event(apr("Erik Lindqvist"), [pre(), apr()]) is None                  # the spouse can still sign
+for role in ("Preparer", "Reviewer", "Partner", "Client", "Administrator"):
+    assert visible_events([pre(), apr()], role) == [pre(), apr()]                  # everyone sees the return's status
 print("rules ok")

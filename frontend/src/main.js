@@ -237,13 +237,48 @@ async function trackView(target, kind) {
   if (state.key === target) render();
 }
 
+// Text typed into a box but not sent yet. The page redraws by clearing and rebuilding, which would
+// wipe it (after any send, when another tab's change arrives, or when you click another line).
+// So it is saved per line and role as you leave, and put back when that line is shown again.
+// Boxes in the return approval panel belong to the whole return, so they are saved per role only.
+// It lives in memory: reloading the page forgets unsent text.
+const DRAFT_FIELDS = 'textarea, input[type="text"], input[type="number"], input[type="date"], select';
+const draftStore = new Map(); // "line|role::box" -> text typed but not sent
+let draftScope = '';
+
+const draftKey = (el) => el.id || el.getAttribute('aria-label');
+const inDraftArea = (el) => Boolean(draftKey(el)) && Boolean(el.closest('#claim, .approval'));
+const draftSlot = (el, scope) => `${el.closest('.approval') ? `return|${scope.split('|')[1]}` : scope}::${draftKey(el)}`;
+
+/** Save what is typed in the boxes now showing (they belong to `scope`). */
+function saveDrafts(scope) {
+  for (const el of document.querySelectorAll(DRAFT_FIELDS)) {
+    if (!inDraftArea(el)) continue;
+    if (el.value) draftStore.set(draftSlot(el, scope), el.value);
+    else draftStore.delete(draftSlot(el, scope));
+  }
+}
+
+/** Put back what was typed for `scope` in the boxes just drawn. */
+function restoreDrafts(scope) {
+  for (const el of document.querySelectorAll(DRAFT_FIELDS)) {
+    if (!inDraftArea(el)) continue;
+    const saved = draftStore.get(draftSlot(el, scope));
+    if (saved !== undefined && el.value !== saved) el.value = saved;
+  }
+}
+
 function render({ scrollToMark = false } = {}) {
   if (!state.index) return;
+  const scope = `${state.key}|${state.role}`;
+  if (draftScope) saveDrafts(draftScope); // the boxes still on screen belong to the line and role we are leaving
+  draftScope = scope;
   renderBanner();
   state.statusByKey = computeStatuses(state.index, state.events); // events can change a status (verification)
   // Keep the search box focused and the list scrolled while redrawing.
   const active = document.activeElement;
   const keepFocus = active && active.id && ['filter'].includes(active.id) ? { id: active.id, at: active.selectionStart } : null;
+  const draftFocus = active && inDraftArea(active) && active.selectionStart !== undefined ? { key: draftKey(active), at: active.selectionStart } : null;
   const listScroll = els.picker.querySelector('.picker-list')?.scrollTop ?? 0;
 
   renderTopbar(els.topbar, state, on);
@@ -253,6 +288,12 @@ function render({ scrollToMark = false } = {}) {
 
   const list = els.picker.querySelector('.picker-list');
   if (list) list.scrollTop = listScroll;
+  restoreDrafts(scope);
+  if (draftFocus) {
+    const box = [...document.querySelectorAll(DRAFT_FIELDS)].find((el) => draftKey(el) === draftFocus.key);
+    box?.focus();
+    try { box?.setSelectionRange(draftFocus.at, draftFocus.at); } catch { /* number and date boxes have no caret */ }
+  }
   if (keepFocus) {
     const input = document.getElementById(keepFocus.id);
     input?.focus();

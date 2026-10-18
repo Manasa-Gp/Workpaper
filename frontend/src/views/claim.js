@@ -18,7 +18,7 @@ import { h, clear } from '../dom.js';
 import { traceClaim } from '../trace.js';
 import { claimChecks, worst } from '../checks.js';
 import { num, signed, dayTime, dueDay } from '../format.js';
-import { effectiveValue, questionsFor, reviewPointsFor, assignmentsFor, eventsFor, verifiedEvent, signoffBlocker, signoffState, taxEffect, newEvent } from '../events.js';
+import { EVENT_LABEL, effectiveValue, questionsFor, reviewPointsFor, assignmentsFor, eventsFor, verifiedEvent, signoffBlocker, signoffState, taxEffect, newEvent } from '../events.js';
 import { actor, can, WHY_NOT } from '../roles.js';
 
 const LABEL = { pass: 'Pass', warn: 'Look at this', fail: 'Failed', na: 'Not applicable' };
@@ -113,6 +113,7 @@ function reviewPoints(state, line, on) {
     onClick: () => {
       const t = text.value.trim();
       if (!t) return;
+      text.value = ''; // sent: empty the box so the redraw does not bring the text back
       on.add(newEvent({ claim: line.key, type: 'block', by: { name: who.name, role: who.role }, text: t }));
     },
   }, 'Raise review point');
@@ -145,7 +146,10 @@ function assignments(state, line, on) {
     onClick: () => {
       const t = text.value.trim();
       if (!t) return;
-      on.add(newEvent({ claim: line.key, type: 'assign', by: { name: who.name, role: who.role }, to: to.value, due: due.value || null, text: t }));
+      const dueDate = due.value || null;
+      text.value = '';
+      due.value = '';
+      on.add(newEvent({ claim: line.key, type: 'assign', by: { name: who.name, role: who.role }, to: to.value, due: dueDate, text: t }));
     },
   }, 'Assign');
   const doneButton = (a) => h('button', {
@@ -178,6 +182,7 @@ function questions(state, line, on) {
     onClick: () => {
       const q = text.value.trim();
       if (!q) return;
+      text.value = '';
       on.add(newEvent({ claim: line.key, type: 'question', by: { name: who.name, role: who.role }, to: to.value, text: q }));
     },
   }, 'Ask');
@@ -190,6 +195,7 @@ function questions(state, line, on) {
       onClick: () => {
         const a = box.value.trim();
         if (!a) return;
+        box.value = '';
         on.add(newEvent({ claim: line.key, type: 'answer', by: { name: who.name, role: who.role }, answers: q.id, text: a }));
       },
     }, 'Answer');
@@ -248,11 +254,12 @@ function addedEvidence(notes, state, line, on) {
       const text = what.value.trim();
       if (!text) { message.textContent = 'Say what the evidence is.'; return; }
       const picked = file.files?.[0];
-      on.add(newEvent({
-        claim: line.key, type: 'evidence', by: { name: who.name, role: who.role }, text,
-        where: where.value.trim() || null,
-        file: picked ? { name: picked.name, size: picked.size } : null, // the name only: the file itself is not stored
-      }));
+      const whereText = where.value.trim() || null;
+      const fileInfo = picked ? { name: picked.name, size: picked.size } : null; // the name only: the file itself is not stored
+      what.value = '';
+      where.value = '';
+      file.value = '';
+      on.add(newEvent({ claim: line.key, type: 'evidence', by: { name: who.name, role: who.role }, text, where: whereText, file: fileInfo }));
     },
   }, 'Add evidence');
   if (!can(state.role, 'evidence')) {
@@ -413,6 +420,7 @@ function actions(state, line, value, checks, on) {
     onClick: () => {
       const text = noteBox.value.trim();
       if (!text) return;
+      noteBox.value = '';
       on.add(newEvent({ claim: line.key, type: 'note', by: { name: who.name, role: who.role }, text }));
     },
   }, 'Add note'));
@@ -437,9 +445,13 @@ function actions(state, line, value, checks, on) {
         preview.textContent = 'Enter a new value and a reason.';
         return;
       }
+      const why = reason.value.trim();
+      newValue.value = '';
+      reason.value = '';
+      preview.textContent = '';
       on.add(newEvent({
         claim: line.key, type: 'adjust', by: { name: who.name, role: who.role },
-        from: value, to, text: reason.value.trim(), taxEffect: taxEffect(state.index.current, line.key, to - value),
+        from: value, to, text: why, taxEffect: taxEffect(state.index.current, line.key, to - value),
       }));
     },
   }, 'Adjust number'));
@@ -481,7 +493,7 @@ function history(events) {
   if (!events.length) return h('p', { class: 'muted' }, 'Nothing recorded on this number yet.');
   return h('ol', { class: 'history' },
     [...events].reverse().map((e) => {
-      const what = { note: 'Note', adjust: 'Adjusted', signoff: 'Signed off', revert: 'Reverted', verify: 'Verified', evidence: 'Evidence added', question: 'Question', answer: 'Answer', block: 'Review point', clear: 'Review point cleared', assign: 'Assigned', done: 'Task done' }[e.type];
+      const what = EVENT_LABEL[e.type];
       return h('li', {},
         h('p', { class: 'hist-head' }, h('strong', {}, what), ` · ${e.by.name} (${e.by.role}) · ${dayTime(e.at)}`),
         e.type === 'adjust' || e.type === 'revert' ? h('p', {}, `${num(e.from)} → ${num(e.to)}`) : null,

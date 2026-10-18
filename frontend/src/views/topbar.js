@@ -8,6 +8,9 @@ import { ROLES, actor, can } from '../roles.js';
 
 let confirmingReset = false;
 
+// Shown in the top bar so you can tell which version of the page your browser is really running.
+const BUILD = 'p5-drafts-1';
+
 export function renderTopbar(el, state, on) {
   clear(el);
   const who = actor(state.index.packet, state.role);
@@ -21,7 +24,7 @@ export function renderTopbar(el, state, on) {
     }),
   );
 
-  const doing = Object.entries({ note: 'add notes', evidence: 'add evidence', ask: 'ask questions', answer: 'answer questions', viewlog: 'see who viewed', adjust: 'adjust numbers', verify: 'verify flagged checks', signoff: 'sign off', block: 'raise review points', clear: 'clear review points', assign: 'assign work' })
+  const doing = Object.entries({ note: 'add notes', evidence: 'add evidence', ask: 'ask questions', answer: 'answer questions', viewlog: 'see who viewed', adjust: 'adjust numbers', verify: 'verify flagged checks', signoff: 'sign off', block: 'raise review points', clear: 'clear review points', assign: 'assign work', present: 'present the return for approval', approve: 'approve and e-sign the return' })
     .filter(([action]) => can(state.role, action))
     .map(([, text]) => text);
   const summary = state.role === 'admin' ? 'can reset saved work' : doing.length ? `can ${doing.join(', ')}` : 'can view only';
@@ -55,7 +58,7 @@ export function renderTopbar(el, state, on) {
       h('label', { for: 'role-select' }, 'Acting as'),
       select,
       h('span', { class: 'role-note' }, `${who.name} ${summary}`),
-      h('span', { class: 'role-note proto' }, 'Prototype: roles are enforced on this screen only, not by a server.'),
+      h('span', { class: 'role-note proto' }, `Prototype: roles are enforced on this screen only, not by a server. Build: ${BUILD}`),
       resetButton,
     ),
   );

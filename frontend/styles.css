@@ -245,3 +245,13 @@ details.passed[open] > summary { margin-bottom: 8px; }
 .inbox-list li { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); }
 .inbox-list p { margin: 2px 0; }
 .overdue { color: var(--fail); font-weight: 600; }
+
+/* ---------- return approval and activity ---------- */
+.approval, .activity { border-bottom: 1px solid var(--line); padding: 8px 12px; }
+.approval > summary, .activity > summary { cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.approval p { margin: 6px 0; }
+.sign-row { margin: 10px 0; }
+.sign-name { margin: 0 0 4px; font-weight: 600; }
+.sign-fields { display: flex; flex-direction: column; gap: 6px; }
+.sign-fields input { width: 100%; box-sizing: border-box; padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); }
+.sign-fields .btn { white-space: nowrap; align-self: flex-start; }

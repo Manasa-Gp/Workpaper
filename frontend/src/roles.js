@@ -5,9 +5,9 @@
 
 export const ROLES = {
   preparer: { label: 'Preparer', staffId: 'st-01', can: ['note', 'adjust', 'evidence', 'ask', 'answer', 'seepoints', 'done'] },
-  reviewer: { label: 'Reviewer', staffId: 'st-02', can: ['note', 'evidence', 'ask', 'answer', 'verify', 'signoff', 'viewlog', 'block', 'clear', 'seepoints', 'assign', 'done'] },
-  partner: { label: 'Partner', staffId: 'st-03', can: ['note', 'evidence', 'ask', 'answer', 'verify', 'signoff', 'viewlog', 'block', 'clear', 'seepoints', 'assign', 'done'] },
-  client: { label: 'Client', staffId: null, can: ['answer'] },
+  reviewer: { label: 'Reviewer', staffId: 'st-02', can: ['note', 'evidence', 'ask', 'answer', 'verify', 'signoff', 'viewlog', 'block', 'clear', 'seepoints', 'assign', 'done', 'present'] },
+  partner: { label: 'Partner', staffId: 'st-03', can: ['note', 'evidence', 'ask', 'answer', 'verify', 'signoff', 'viewlog', 'block', 'clear', 'seepoints', 'assign', 'done', 'present'] },
+  client: { label: 'Client', staffId: null, can: ['answer', 'approve'] },
   admin: { label: 'Administrator', staffId: 'st-05', can: ['reset', 'viewlog'] },
 };
 
@@ -36,5 +36,7 @@ export const WHY_NOT = {
   clear: 'Only a reviewer or partner can clear a review point.',
   assign: 'Only a reviewer or partner can assign work.',
   done: 'This task is for someone else.',
+  present: 'Only a reviewer or partner can present the return for approval.',
+  approve: 'Only the client approves and signs the return.',
   reset: 'Only the administrator can reset saved work.',
 };

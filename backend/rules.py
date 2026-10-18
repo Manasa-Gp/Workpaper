@@ -11,14 +11,17 @@ Honest limit: the demo has no login. The server believes the role written in the
 who is really sending. A real version would check a signed-in user instead.
 """
 
+import json
 from datetime import datetime
+from functools import lru_cache
+from pathlib import Path
 
 # role label (as written in event["by"]["role"]) -> event types that role may add
 ALLOWED = {
     "Preparer": {"note", "adjust", "revert", "evidence", "question", "answer", "done"},
-    "Reviewer": {"note", "evidence", "verify", "signoff", "question", "answer", "block", "clear", "assign", "done"},
-    "Partner": {"note", "evidence", "verify", "signoff", "question", "answer", "block", "clear", "assign", "done"},
-    "Client": {"answer"},  # the client answers questions put to them and does nothing else
+    "Reviewer": {"note", "evidence", "verify", "signoff", "question", "answer", "block", "clear", "assign", "done", "present"},
+    "Partner": {"note", "evidence", "verify", "signoff", "question", "answer", "block", "clear", "assign", "done", "present"},
+    "Client": {"answer", "approve"},  # the client answers questions and approves/signs the return; nothing else
     "Administrator": set(),
 }
 
@@ -45,6 +48,10 @@ def check_event(event, events=()):
         return "A review point must say what is wrong."
     if kind == "clear":
         return _check_clear(event, events)
+    if kind == "present":
+        return _check_present(event, events)
+    if kind == "approve":
+        return _check_approve(event, events)
     if kind == "assign":
         return _check_assign(event)
     if kind == "done":
@@ -64,6 +71,55 @@ def open_blocks(events, claim):
 
 
 STAFF_ROLES = ("Preparer", "Reviewer", "Partner")
+
+# ---- presenting the return and the client's approval (Form 8879) ----------------------------
+# "Present" freezes a fingerprint of every number on the return. The client then approves THAT
+# fingerprint, once per signer (taxpayer and spouse). If a number changes afterwards the
+# fingerprint no longer matches and the page shows the approval as out of date.
+
+@lru_cache(maxsize=1)
+def signers():
+    """Names of the people who must sign a joint return: the taxpayer and the spouse in the packet."""
+    try:
+        with open(Path(__file__).resolve().parent / "data" / "packet.json", encoding="utf-8") as f:
+            people = json.load(f)["household"]["people"]
+        return tuple(p["name"] for p in people if p.get("role") in ("taxpayer", "spouse"))
+    except (OSError, ValueError, KeyError):
+        return ()
+
+
+def _latest(events, kind):
+    found = [e for e in events if e.get("type") == kind]
+    return found[-1] if found else None
+
+
+def _check_present(event, events):
+    fingerprint = event.get("fingerprint")
+    if not isinstance(fingerprint, str) or not fingerprint or len(fingerprint) > 64:
+        return "Presenting the return needs its fingerprint."
+    points = {e.get("id") for e in events if e.get("type") == "block"} - {e.get("clears") for e in events if e.get("type") == "clear"}
+    if points:
+        return f"{len(points)} review point(s) are still open. Clear them before presenting the return."
+    last = _latest(events, "present")
+    if last is not None and last.get("fingerprint") == fingerprint:
+        return "The return was already presented at these numbers."
+    return None
+
+
+def _check_approve(event, events):
+    present = _latest(events, "present")
+    if present is None or present.get("id") != event.get("presents"):
+        return "That is not the return currently presented for approval."
+    if present.get("fingerprint") != event.get("fingerprint"):
+        return "The numbers have changed since the return was presented."
+    signer = event.get("signer")
+    if signer not in signers():
+        return "The signer must be the taxpayer or the spouse."
+    if str(event.get("signature", "")).strip().lower() != str(signer).strip().lower():
+        return "Type the signer's full name to sign."
+    if any(e.get("type") == "approve" and e.get("presents") == present.get("id") and e.get("signer") == signer for e in events):
+        return f"{signer} has already signed this version."
+    return None
 
 
 def _check_assign(event):

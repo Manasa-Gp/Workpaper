@@ -11,6 +11,8 @@ import { h, clear } from '../dom.js';
 import { num } from '../format.js';
 import { effectiveValue, signoffState, openQuestionCount, openReviewPoints } from '../events.js';
 import { inbox } from './inbox.js';
+import { approval } from './approval.js';
+import { activity } from './activity.js';
 
 const GLYPH = { pass: '✓', warn: '!', fail: '×', na: '·' };
 const WORDS = { pass: 'checks pass', warn: 'look at this', fail: 'a check failed', na: 'calculated, no source documents' };
@@ -40,6 +42,8 @@ export function renderPicker(el, state, on) {
   clear(el);
   el.append(
     inbox(state, on),
+    approval(state, on),
+    activity(state, on),
     h('div', { class: 'picker-head' },
       h('input', {
         id: 'filter', type: 'search', placeholder: 'Find a number, e.g. wages or F1040.1a', value: state.filter,

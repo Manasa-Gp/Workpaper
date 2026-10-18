@@ -6,7 +6,7 @@ import { buildIndex, docLanding } from '../src/packetIndex.js';
 import { traceClaim } from '../src/trace.js';
 import { printedMatch, duplicateDoc, duplicatePage, claimChecks, worst } from '../src/checks.js';
 import { can } from '../src/roles.js';
-import { questionsFor, openQuestionCount, effectiveValue, signoffState, taxEffect, signoffBlocker, openReviewPoints, reviewPointsFor, assignmentsFor, inboxFor } from '../src/events.js';
+import { questionsFor, openQuestionCount, effectiveValue, signoffState, taxEffect, signoffBlocker, openReviewPoints, reviewPointsFor, assignmentsFor, inboxFor, returnFingerprint, approvalState, signersOf, allOpenReviewPoints, EVENT_LABEL } from '../src/events.js';
 
 const packet = JSON.parse(readFileSync(new URL('../../backend/data/packet.json', import.meta.url)));
 const index = buildIndex(packet);
@@ -174,6 +174,32 @@ test('the inbox lists what is waiting on a role, overdue first', () => {
   assert.equal(mine[1].overdue, false);
   assert.deepEqual(inboxFor(events, 'Reviewer', '2026-10-18'), []); // review points are for the preparer to deal with
   assert.equal(assignmentsFor(events, 'D')[0].d.id, 'd3');
+});
+
+test('the return fingerprint changes when a number changes, and approval goes out of date', () => {
+  const lines = index.current.lines;
+  const f0 = returnFingerprint(lines, []);
+  assert.equal(returnFingerprint(lines, []), f0, 'same numbers, same fingerprint');
+  const key = lines.find((l) => typeof l.value === 'number').key;
+  const adjust = { id: 'a1', claim: key, type: 'adjust', to: 123456789, by: { name: 'P', role: 'Preparer' } };
+  const f1 = returnFingerprint(lines, [adjust]);
+  assert.notEqual(f1, f0);
+  const signers = signersOf(packet);
+  assert.deepEqual(signers, ['Ngozi Okafor', 'Erik Lindqvist']); // taxpayer and spouse, not the dependent
+  const present = { id: 'p1', type: 'present', claim: 'RETURN', fingerprint: f0, by: { name: 'D', role: 'Reviewer' } };
+  const ok = (name) => ({ id: `s-${name}`, type: 'approve', claim: 'RETURN', presents: 'p1', signer: name, fingerprint: f0 });
+  assert.equal(approvalState([], f0, signers).state, 'none');
+  assert.equal(approvalState([present], f0, signers).state, 'presented');
+  assert.equal(approvalState([present, ok(signers[0])], f0, signers).state, 'partly');
+  assert.deepEqual(approvalState([present, ok(signers[0])], f0, signers).missing, [signers[1]]);
+  assert.equal(approvalState([present, ok(signers[0]), ok(signers[1])], f0, signers).state, 'approved');
+  assert.equal(approvalState([present, ok(signers[0]), ok(signers[1]), adjust], f1, signers).state, 'stale'); // a number changed after signing
+  const newer = { ...present, id: 'p2', fingerprint: f1 };
+  assert.equal(approvalState([present, ok(signers[0]), newer], f1, signers).state, 'presented'); // old signatures do not carry over
+  assert.equal(allOpenReviewPoints([{ id: 'b', type: 'block' }, { id: 'c', type: 'clear', clears: 'b' }, { id: 'b2', type: 'block' }]).length, 1);
+  for (const type of ['present', 'approve']) assert.ok(EVENT_LABEL[type]);
+  assert.equal(can('client', 'approve'), true);
+  assert.equal(can('preparer', 'present'), false);
 });
 
 test('a private question stub is not counted and has no text', () => {
