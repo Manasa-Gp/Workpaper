@@ -255,3 +255,30 @@ details.passed[open] > summary { margin-bottom: 8px; }
 .sign-fields { display: flex; flex-direction: column; gap: 6px; }
 .sign-fields input { width: 100%; box-sizing: border-box; padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); }
 .sign-fields .btn { white-space: nowrap; align-self: flex-start; }
+
+/* ---------- filing panel and e-file rejection ---------- */
+.panels { max-height: 46vh; overflow: auto; border-bottom: 1px solid var(--line); }
+.panels > details:last-child { border-bottom: 0; }
+.filing { border-bottom: 1px solid var(--line); padding: 8px 12px; }
+.filing > summary { cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.filing p { margin: 4px 0; }
+.filing h3 { margin: 12px 0 4px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-2); }
+.filing-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.filing-list li { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); }
+.filing-list .f-rejected { border-color: var(--fail); background: var(--fail-bg); }
+.filing-list .f-not_transmitted { border-color: var(--warn); }
+.filing-list .f-accepted { border-color: var(--pass); }
+.f-mark { display: inline-block; width: 1.2em; text-align: center; }
+.rejection { border-left: 4px solid var(--fail); padding-left: 12px; }
+.rejection-item { margin: 8px 0; }
+.rejection-item p { margin: 4px 0; }
+.mismatch { margin: 8px 0; padding: 8px 10px; border-radius: 6px; background: var(--fail-bg); }
+.mismatch p { margin: 2px 0; }
+
+/* ---------- records drawn as labelled lines, with sensitive numbers hidden ---------- */
+.sensitive-bar { display: flex; align-items: center; gap: 10px; margin: 8px 0; padding: 6px 10px; border-radius: 6px; background: var(--warn-bg); color: var(--warn); }
+dl.record { display: grid; grid-template-columns: minmax(0, 12em) minmax(0, 1fr); gap: 4px 12px; margin: 8px 0; }
+dl.record dt { color: var(--ink-2); }
+dl.record dd { margin: 0; overflow-wrap: anywhere; }
+dl.record dl.record { margin: 0; padding-left: 8px; border-left: 2px solid var(--line); }
+.record-list { margin: 0; padding-left: 18px; }

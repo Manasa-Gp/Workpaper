@@ -17,6 +17,9 @@ import { docLanding } from '../packetIndex.js';
 import { locatorFor, resolveSource } from '../trace.js';
 import { printedMatch, duplicateDoc, duplicatePage } from '../checks.js';
 import { day } from '../format.js';
+import { maskDeep, hasSecrets } from '../mask.js';
+import { recordView } from './record.js';
+import { canSeeSensitive } from '../roles.js';
 
 export function renderSource(el, state, on) {
   clear(el);
@@ -31,7 +34,7 @@ export function renderSource(el, state, on) {
   if (source.kind === 'value' && source.value) {
     el.append(renderDocument(state, source, on));
   } else {
-    el.append(renderRecord(source));
+    el.append(renderRecord(source, state, on));
   }
 }
 
@@ -207,7 +210,7 @@ function editDistance(a, b) {
 
 // ---------- evidence that is not a document ----------
 
-function renderRecord(source) {
+function renderRecord(source, state, on) {
   const body = [];
   if (source.kind === 'client' && source.item) {
     const item = source.item;
@@ -220,7 +223,19 @@ function renderRecord(source) {
   } else if (source.kind === 'prior' || source.kind === 'agency' || source.kind === 'param' || source.kind === 'asset' || source.kind === 'person' || source.kind === 'event') {
     const heading = { prior: 'Last year’s record', agency: 'Tax agency record', param: 'Engine parameter', asset: 'Asset record', person: 'Household record', event: 'Timeline event' }[source.kind];
     const found = source.found ?? source.record ?? source.person ?? source.event;
-    body.push(h('h2', {}, heading), h('p', { class: 'meta-line' }, source.ref), h('pre', { class: 'json' }, found === undefined ? 'Nothing found at this location.' : JSON.stringify(found, null, 2)));
+    // Records can hold SSNs, PINs and bank numbers. They are hidden unless a cleared role chooses to reveal them.
+    const secret = found !== undefined && hasSecrets(found);
+    const allowed = canSeeSensitive(state.index.packet, state.role);
+    const shown = secret && allowed && state.revealed.has(source.ref);
+    body.push(h('h2', {}, heading), h('p', { class: 'meta-line' }, source.ref));
+    if (secret) {
+      body.push(h('div', { class: 'sensitive-bar' },
+        h('span', {}, shown ? 'Showing sensitive numbers.' : 'Sensitive numbers are hidden.'),
+        allowed
+          ? h('button', { type: 'button', class: 'btn', onClick: () => on.reveal(source.ref) }, shown ? 'Hide' : 'Reveal')
+          : h('span', { class: 'muted' }, ' Your role is not cleared to see them.')));
+    }
+    body.push(found === undefined ? h('p', {}, 'Nothing found at this location.') : recordView(shown || !secret ? found : maskDeep(found)));
   } else {
     body.push(h('h2', {}, 'Evidence'), h('p', {}, `No viewer for ${source.ref}.`));
   }

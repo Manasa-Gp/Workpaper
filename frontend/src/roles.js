@@ -5,6 +5,8 @@
 
 export const ROLES = {
   preparer: { label: 'Preparer', staffId: 'st-01', can: ['note', 'adjust', 'evidence', 'ask', 'answer', 'seepoints', 'done'] },
+  // A second preparer the firm has NOT cleared for sensitive data (packet: Marcus Bell, st-04). Same work, but no Reveal.
+  preparer2: { label: 'Preparer', staffId: 'st-04', can: ['note', 'adjust', 'evidence', 'ask', 'answer', 'seepoints', 'done'] },
   reviewer: { label: 'Reviewer', staffId: 'st-02', can: ['note', 'evidence', 'ask', 'answer', 'verify', 'signoff', 'viewlog', 'block', 'clear', 'seepoints', 'assign', 'done', 'present'] },
   partner: { label: 'Partner', staffId: 'st-03', can: ['note', 'evidence', 'ask', 'answer', 'verify', 'signoff', 'viewlog', 'block', 'clear', 'seepoints', 'assign', 'done', 'present'] },
   client: { label: 'Client', staffId: null, can: ['answer', 'approve'] },
@@ -23,6 +25,16 @@ export function actor(packet, roleKey) {
 }
 
 export const can = (roleKey, action) => ROLES[roleKey].can.includes(action);
+
+/**
+ * May this role reveal sensitive numbers (SSNs, PINs, bank numbers)? Only staff the firm has cleared
+ * (sensitive_data_clearance in the packet). The client is not staff, so has no clearance to reveal with.
+ */
+export function canSeeSensitive(packet, roleKey) {
+  const role = ROLES[roleKey];
+  if (!role.staffId) return false;
+  return packet.firm.staff.find((s) => s.id === role.staffId)?.sensitive_data_clearance === true;
+}
 
 export const WHY_NOT = {
   note: 'Your role cannot add notes.',

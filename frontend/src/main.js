@@ -46,6 +46,7 @@ const state = {
   loadError: false,
   unsaved: [],
   viewsFor: null, // { key, list }: the view log of the open line, loaded for roles that may read it
+  revealed: new Set(), // records whose sensitive numbers this person chose to show (cleared when the role changes)
 };
 
 const els = {
@@ -67,7 +68,12 @@ const on = {
   attention(flag) { state.onlyAttention = flag; render(); },
   group(key, open) { state.groupsOpen.set(key, open); }, // remembered across redraws; no redraw needed
   passed(open) { state.passedOpen = open; }, // remembered across redraws; no redraw needed
-  role(roleKey) { state.role = roleKey; render(); refreshViews(); refreshEvents(); }, // the log is only readable by some roles
+  role(roleKey) { state.role = roleKey; state.revealed.clear(); render(); refreshViews(); refreshEvents(); },
+  reveal(ref) { // show or hide the sensitive numbers of one record; showing is recorded in the view log
+    if (state.revealed.has(ref)) state.revealed.delete(ref);
+    else { state.revealed.add(ref); trackView(`reveal:${ref}`, 'source'); }
+    render();
+  }, // the log is only readable by some roles
   add(event) {
     if (state.loadError) return;
     state.events = [...state.events, event];

@@ -5,7 +5,9 @@ import assert from 'node:assert/strict';
 import { buildIndex, docLanding } from '../src/packetIndex.js';
 import { traceClaim } from '../src/trace.js';
 import { printedMatch, duplicateDoc, duplicatePage, claimChecks, worst } from '../src/checks.js';
-import { can } from '../src/roles.js';
+import { can, canSeeSensitive } from '../src/roles.js';
+import { maskDeep, maskText, maskNumber, hasSecrets } from '../src/mask.js';
+import { filingTimeline, filingStatus, rejections, rejectionsForLine, ssnMismatch, maskSsn } from '../src/filing.js';
 import { questionsFor, openQuestionCount, effectiveValue, signoffState, taxEffect, signoffBlocker, openReviewPoints, reviewPointsFor, assignmentsFor, inboxFor, returnFingerprint, approvalState, signersOf, allOpenReviewPoints, EVENT_LABEL } from '../src/events.js';
 
 const packet = JSON.parse(readFileSync(new URL('../../backend/data/packet.json', import.meta.url)));
@@ -200,6 +202,77 @@ test('the return fingerprint changes when a number changes, and approval goes ou
   for (const type of ['present', 'approve']) assert.ok(EVENT_LABEL[type]);
   assert.equal(can('client', 'approve'), true);
   assert.equal(can('preparer', 'present'), false);
+});
+
+test('filing: the timeline merges the firm and the agencies, in order, without leaking the PINs', () => {
+  const items = filingTimeline(packet);
+  const titles = items.map((i) => i.title);
+  assert.deepEqual(items.map((i) => i.at), [...items.map((i) => i.at)].sort(), 'oldest first');
+  for (const expected of ['Extension filed with payment', 'Client signed Form 8879 and FTB 8879', 'Federal return rejected', 'California return held (not sent)', 'Federal return accepted', 'California return accepted', 'Federal balance paid', 'California refund issued']) {
+    assert.ok(titles.includes(expected), `has: ${expected}`);
+  }
+  assert.ok(titles.indexOf('Federal return accepted') < titles.indexOf('IRS recorded the return as filed'), 'accepted comes before the IRS records it');
+  assert.ok(!JSON.stringify(items).match(/41207|88310/), 'the signers PINs are not shown');
+  assert.match(items.find((i) => i.kind === 'payment').detail, /4,220/);
+  assert.match(items.find((i) => i.kind === 'refund').detail, /8,256/);
+  const status = filingStatus(packet);
+  assert.equal(status.allAccepted, true);
+  assert.equal(status.filedOn, '2026-07-14');
+  assert.equal(status.extendedTo, '2026-10-15');
+  assert.equal(status.onTime, true);
+});
+
+test('filing: the rejection is explained, resolved, and shown against the lines it concerns', () => {
+  const found = rejections(packet);
+  assert.equal(found.length, 1);
+  assert.equal(found[0].error.code, 'R0000-504-02');
+  assert.equal(found[0].resolvedBy.date.slice(0, 10), '2026-07-14');
+  assert.equal(found[0].held.length, 1, 'the California return was held');
+  const m = found[0].help.mismatch;
+  assert.deepEqual([m.person, m.docId, m.swapped], ['Theo Lindqvist-Okafor', 'D71', true]);
+  assert.notEqual(m.organizer, m.card);
+  assert.equal(m.valueRef, 'ev-1080', 'the button opens the number on the card');
+  assert.ok(index.values.has(m.valueRef));
+  assert.equal(maskSsn(m.card), '•••-••-3390');
+  for (const key of ['F1040.19', 'F8812.4', 'F8812.6', 'F2441.2', 'F540NR.39']) assert.equal(rejectionsForLine(packet, key).length, 1, key);
+  assert.equal(rejectionsForLine(packet, 'F1040.1a').length, 0, 'an unrelated line shows no rejection');
+  assert.equal(ssnMismatch(packet, 'nobody in the household is named here'), null);
+  for (const key of ['F1040.19', 'F8812.4', 'F8812.6', 'F2441.2', 'F540NR.39']) assert.ok(index.current.byKey.has(key), `${key} exists in the current return`);
+});
+
+test('masking: SSNs, PINs and bank numbers are hidden in records, on a copy', () => {
+  const theo = packet.household.people.find((p) => p.id === 'theo');
+  const before = JSON.stringify(theo);
+  const masked = maskDeep(theo);
+  assert.equal(masked.ssn, '•••-••-3309');
+  assert.equal(masked.name, theo.name, 'ordinary fields are untouched');
+  assert.equal(JSON.stringify(theo), before, 'the packet itself is not changed');
+  const bank = maskDeep(packet.household.bank_account_for_refund_or_payment);
+  assert.ok(bank.account.endsWith('9276') && !bank.account.includes('4483'), 'account keeps its last four only');
+  assert.ok(bank.routing.endsWith('0017') && !bank.routing.includes('9900'), 'routing keeps its last four only');
+  assert.equal(maskDeep(packet.household.people[0]).ip_pin, '••••••', 'a PIN keeps no digits at all');
+  const signed = packet.timeline.find((e) => e.event === 'client_approved_and_signed_8879');
+  assert.ok(!maskDeep(signed).detail.match(/41207|88310/), 'PINs written inside a sentence are hidden');
+  assert.equal(maskText('SSN 666-41-2287 PIN 123456'), 'SSN •••-••-2287 PIN ••••••');
+  assert.equal(maskNumber('abc'), '•••');
+  assert.equal(hasSecrets(theo), true);
+  assert.equal(hasSecrets({ name: 'No secrets here', amount: 5 }), false);
+  // nothing in the household, agency or timeline records can leak a full SSN once masked
+  for (const section of ['household', 'prior_years', 'tax_agency_records', 'timeline']) {
+    assert.ok(!JSON.stringify(maskDeep(packet[section])).match(/\b\d{3}-\d{2}-\d{4}\b/), `${section} has no full SSN after masking`);
+  }
+});
+
+test('masking: who may reveal sensitive numbers', () => {
+  assert.equal(canSeeSensitive(packet, 'reviewer'), true);
+  for (const role of ['preparer', 'reviewer', 'partner', 'admin']) assert.equal(canSeeSensitive(packet, role), true, `${role} is cleared in the packet`);
+  assert.equal(canSeeSensitive(packet, 'preparer2'), false, 'Marcus Bell is a preparer the firm has not cleared');
+  assert.equal(canSeeSensitive(packet, 'client'), false, 'the client is not staff, so has no clearance');
+  // the answer comes from the packet, not from the role name: change the packet and the answer changes
+  const changed = structuredClone(packet);
+  changed.firm.staff.find((s) => s.id === 'st-01').sensitive_data_clearance = false;
+  assert.equal(canSeeSensitive(changed, 'preparer'), false);
+  assert.equal(packet.firm.staff.find((s) => s.id === 'st-04').name, 'Marcus Bell');
 });
 
 test('a private question stub is not counted and has no text', () => {

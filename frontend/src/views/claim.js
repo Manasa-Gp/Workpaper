@@ -16,6 +16,7 @@
 
 import { h, clear } from '../dom.js';
 import { traceClaim } from '../trace.js';
+import { rejectionsForLine, maskSsn } from '../filing.js';
 import { claimChecks, worst } from '../checks.js';
 import { num, signed, dayTime, dueDay } from '../format.js';
 import { EVENT_LABEL, effectiveValue, questionsFor, reviewPointsFor, assignmentsFor, eventsFor, verifiedEvent, signoffBlocker, signoffState, taxEffect, newEvent } from '../events.js';
@@ -54,6 +55,8 @@ export function renderClaim(el, state, on) {
       ),
       line.note ? h('p', { class: 'engine-note' }, h('strong', {}, 'Engine note '), line.note) : null,
     ),
+
+    safe('E-file rejection', () => rejectionNotice(state, line, on)),
 
     section('How it was built',
       h('p', { class: 'rule' }, 'Rule ', h('code', {}, line.rule ?? 'none')),
@@ -128,6 +131,34 @@ function reviewPoints(state, line, on) {
         )))
       : h('p', { class: 'muted' }, 'No review points on this number.'),
     canRaise ? h('div', { class: 'row2' }, text, raise) : null,
+  );
+}
+
+/**
+ * When the IRS rejected the e-file and this line is one the rejection concerns, say so here, next to the number,
+ * with the evidence that explains the fix. Nothing is saved: it is read from the packet's e-file record.
+ */
+function rejectionNotice(state, line, on) {
+  const found = rejectionsForLine(state.index.packet, line.key);
+  if (!found.length) return '';
+  return h('section', { class: 'block rejection' },
+    h('h2', {}, 'E-file rejection'),
+    found.map(({ submission, error, held, resolvedBy, help }) => h('div', { class: 'rejection-item' },
+      h('p', {}, h('strong', {}, `Rejected by the ${submission.jurisdiction === 'federal' ? 'IRS' : 'FTB'} · ${error.code}`), ` · ${dayTime(submission.date)}`),
+      h('p', {}, error.message),
+      h('p', { class: 'muted' }, help.why),
+      help.mismatch
+        ? h('div', { class: 'mismatch' },
+            h('p', {}, h('strong', {}, 'What went wrong')),
+            h('p', {}, `${help.mismatch.person}: the organizer has ${maskSsn(help.mismatch.organizer)}, but the Social Security card says ${maskSsn(help.mismatch.card)}`,
+              help.mismatch.swapped ? ' (two digits swapped).' : '.'),
+            h('button', { type: 'button', class: 'linkish', onClick: () => on.source(help.mismatch.valueRef) }, `Show ${help.mismatch.docId} (the card the client sent)`))
+        : null,
+      held.length ? h('p', { class: 'muted' }, `The California return was held until the federal return was accepted (${held.map((s) => s.submission_id).join(', ')}).`) : null,
+      resolvedBy
+        ? h('p', { class: 'verified' }, `✓ Resubmitted and accepted · ${dayTime(resolvedBy.date)} · submission ${resolvedBy.submission_id}`)
+        : h('p', { class: 'tag' }, 'Not resolved yet'),
+    )),
   );
 }
 
