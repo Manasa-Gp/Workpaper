@@ -8,7 +8,7 @@ What it does
   POST /api/events   adds one event, after rules.py says that role may add that kind (else 403)
   POST /api/views    records that someone opened a line or an evidence item (server adds the time)
   GET  /api/views    the view log, for Reviewer / Partner / Administrator only (?role=...&target=...)
-  PUT  /api/events   replaces that list with the one in the request body
+  PUT  /api/events   replaces that list with the one in the request body (Administrator only: ?role=...)
   anything else      serves the files in ../frontend, so one command runs the whole app
 
 Where the data goes
@@ -25,7 +25,7 @@ import threading
 
 from datetime import datetime, timezone
 
-from rules import can_read_views, check_event, check_view
+from rules import can_read_views, can_replace_events, check_event, check_view
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
@@ -96,6 +96,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_PUT(self):
         if unquote(urlparse(self.path).path) != "/api/events":
             return self.send_json(404, {"error": "unknown endpoint"})
+        role = (parse_qs(urlparse(self.path).query).get("role") or [""])[0]
+        if not can_replace_events(role):
+            return self.send_json(403, {"error": f"A {role or 'visitor'} may not replace the saved work. Only the Administrator can reset it."})
         length = int(self.headers.get("Content-Length") or 0)
         if length > MAX_BODY:
             return self.send_json(413, {"error": "too large"})

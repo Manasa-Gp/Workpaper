@@ -58,6 +58,11 @@ VIEW_LOG_READERS = {"Reviewer", "Partner", "Administrator"}
 VIEW_KINDS = {"line", "source"}
 
 
+def can_replace_events(role):
+    """Replacing the whole saved list (PUT /api/events) is the Administrator's reset, nobody else's."""
+    return role == "Administrator"
+
+
 def can_read_views(role):
     return role in VIEW_LOG_READERS
 

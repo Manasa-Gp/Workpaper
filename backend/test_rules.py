@@ -1,5 +1,5 @@
 """Run:  python3 backend/test_rules.py"""
-from rules import can_read_views, check_event, check_view
+from rules import can_read_views, can_replace_events, check_event, check_view
 
 
 def ev(role, kind):
@@ -34,4 +34,6 @@ assert check_view(good) is None
 assert check_view({**good, "kind": "page"})
 assert check_view({**good, "target": ""})
 assert check_view({**good, "by": {"role": "Intern"}})
+assert can_replace_events("Administrator")
+assert not any(can_replace_events(r) for r in ("Preparer", "Reviewer", "Partner", "Client", ""))
 print("rules ok")

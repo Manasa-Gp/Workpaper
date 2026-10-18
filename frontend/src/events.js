@@ -15,8 +15,9 @@ export async function loadEvents() {
 }
 
 /** Saves the whole list. Throws if the server does not accept it. */
-export async function saveEvents(events) {
-  const response = await fetch(API, {
+/** Replaces the whole list. The server only allows this for the Administrator, so the role is sent too. */
+export async function saveEvents(events, role) {
+  const response = await fetch(`${API}?${new URLSearchParams({ role })}`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(events),

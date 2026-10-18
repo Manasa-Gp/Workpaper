@@ -87,7 +87,10 @@ const on = {
       try { state.events = await loadEvents(); state.loadError = false; } catch { /* still down */ }
       render();
     } else if (state.unsaved.length) flush();
-    else save();
+    else { // nothing of ours is waiting: just fetch the server's list again (never overwrite it)
+      try { state.events = await loadEvents(); state.saveError = false; } catch { state.saveError = true; }
+      render();
+    }
   },
 };
 
@@ -148,7 +151,7 @@ function computeStatuses(index, events) {
 }
 
 async function save() {
-  try { await saveEvents(state.events); state.saveError = false; }
+  try { await saveEvents(state.events, actor(state.index.packet, state.role).role); state.saveError = false; }
   catch { state.saveError = true; }
   render();
 }
