@@ -18,7 +18,7 @@ import { h, clear } from '../dom.js';
 import { traceClaim } from '../trace.js';
 import { claimChecks, worst } from '../checks.js';
 import { num, signed, dayTime } from '../format.js';
-import { effectiveValue, eventsFor, verifiedEvent, signoffBlocker, signoffState, taxEffect, newEvent } from '../events.js';
+import { effectiveValue, questionsFor, eventsFor, verifiedEvent, signoffBlocker, signoffState, taxEffect, newEvent } from '../events.js';
 import { actor, can, WHY_NOT } from '../roles.js';
 
 const LABEL = { pass: 'Pass', warn: 'Look at this', fail: 'Failed', na: 'Not applicable' };
@@ -66,7 +66,7 @@ export function renderClaim(el, state, on) {
       trace.sources.length
         ? h('ul', { class: 'sources' }, trace.sources.map((s) => sourceRow(s, state, on)))
         : h('p', { class: 'muted' }, 'This line is calculated from other lines. It has no source documents of its own.'),
-      addedEvidence(notes, state, line, on),
+      safe('Added by the team', () => addedEvidence(notes, state, line, on)),
     ),
 
     section('Checks',
@@ -78,18 +78,75 @@ export function renderClaim(el, state, on) {
       ? section('What uses it', h('ul', { class: 'links' }, trace.feeds.map((l) => linkRow(l, state, on))))
       : '', // el.append(null) would print the word "null"
 
-    related(trace, state, on),
+    safe('Related', () => related(trace, state, on)),
 
-    viewLog(state),
+    safe('Who has looked at this', () => viewLog(state)),
+
+    safe('Questions', () => questions(state, line, on)),
 
     section('Notes, changes and sign-off',
-      actions(state, line, value, checks, on),
-      history(notes),
+      safe('Actions', () => actions(state, line, value, checks, on)),
+      safe('History', () => history(notes.filter((e) => !e.private))),
     ),
   );
 }
 
 // ---------- pieces ----------
+
+const ASK_TO = ['Client', 'Preparer', 'Reviewer', 'Partner'];
+
+/** Questions put to the client or a colleague. An answer attaches to its question and counts as evidence. */
+function questions(state, line, on) {
+  const who = actor(state.index.packet, state.role);
+  const pairs = questionsFor(state.events, line.key);
+  const to = h('select', { id: 'question-to', 'aria-label': 'Who the question is for' }, ASK_TO.map((r) => h('option', { value: r }, `For the ${r}`)));
+  const text = h('input', { id: 'question-text', type: 'text', placeholder: 'Your question (required)', 'aria-label': 'Question' });
+  const ask = h('button', {
+    type: 'button', class: 'btn',
+    onClick: () => {
+      const q = text.value.trim();
+      if (!q) return;
+      on.add(newEvent({ claim: line.key, type: 'question', by: { name: who.name, role: who.role }, to: to.value, text: q }));
+    },
+  }, 'Ask');
+  if (!can(state.role, 'ask')) { ask.setAttribute('disabled', ''); ask.setAttribute('title', WHY_NOT.ask); }
+
+  const answerForm = (q) => {
+    const box = h('input', { id: `answer-${q.id}`, type: 'text', placeholder: 'Your answer', 'aria-label': 'Answer' });
+    const go = h('button', {
+      type: 'button', class: 'btn',
+      onClick: () => {
+        const a = box.value.trim();
+        if (!a) return;
+        on.add(newEvent({ claim: line.key, type: 'answer', by: { name: who.name, role: who.role }, answers: q.id, text: a }));
+      },
+    }, 'Answer');
+    // Not your turn: no box at all, just a note saying who the question is waiting on.
+    if (!can(state.role, 'answer') || who.role !== q.to) {
+      return h('p', { class: 'muted' }, `Waiting for the ${q.to} to answer.`);
+    }
+    return h('div', { class: 'row2' }, box, go);
+  };
+
+  const hidden = pairs.filter((p) => p.q.private).length; // questions between other people: only their existence is sent
+  const readable = pairs.filter((p) => !p.q.private);
+  return section('Questions',
+    readable.length
+      ? h('ul', { class: 'question-list' }, readable.map(({ q, a }) => h('li', {},
+          h('p', {}, h('strong', {}, q.text)),
+          h('p', { class: 'muted' }, `Asked by ${q.by.name} (${q.by.role}) for the ${q.to} · ${dayTime(q.at)}`),
+          a
+            ? h('div', { class: 'answer' },
+                h('p', {}, a.text),
+                h('p', { class: 'muted' }, `Answered by ${a.by.name} (${a.by.role}) · ${dayTime(a.at)} · counts as evidence`))
+            : [h('p', { class: 'tag' }, 'Waiting for an answer'), answerForm(q)],
+        )))
+      : hidden ? null : h('p', { class: 'muted' }, 'No questions on this number.'),
+    hidden ? h('p', { class: 'muted' }, `${hidden} private question${hidden === 1 ? '' : 's'} between other people.`) : null,
+    h('div', { class: 'row2' }, to, text),
+    h('div', { class: 'btns' }, ask),
+  );
+}
 
 /** Who has opened this line. Only for the roles that may read the log (roles.js: 'viewlog'). */
 function viewLog(state) {
@@ -163,6 +220,13 @@ function related(trace, state, on) {
       : null,
   );
 }
+
+/** Build one section; if it throws, show why in its place instead of leaving the whole column blank. */
+const safe = (name, build) => {
+  try { return build(); } catch (err) {
+    return h('section', { class: 'block' }, h('h2', {}, name), h('p', { class: 'muted' }, `This part could not be drawn: ${err.message}`));
+  }
+};
 
 const section = (title, ...children) => h('section', { class: 'block' }, h('h2', {}, title), children);
 const pill = (status, text) => h('span', { class: `pill p-${status}` }, h('span', { 'aria-hidden': 'true' }, GLYPH[status]), ` ${text}`);
@@ -345,7 +409,7 @@ function history(events) {
   if (!events.length) return h('p', { class: 'muted' }, 'Nothing recorded on this number yet.');
   return h('ol', { class: 'history' },
     [...events].reverse().map((e) => {
-      const what = { note: 'Note', adjust: 'Adjusted', signoff: 'Signed off', revert: 'Reverted', verify: 'Verified', evidence: 'Evidence added' }[e.type];
+      const what = { note: 'Note', adjust: 'Adjusted', signoff: 'Signed off', revert: 'Reverted', verify: 'Verified', evidence: 'Evidence added', question: 'Question', answer: 'Answer' }[e.type];
       return h('li', {},
         h('p', { class: 'hist-head' }, h('strong', {}, what), ` · ${e.by.name} (${e.by.role}) · ${dayTime(e.at)}`),
         e.type === 'adjust' || e.type === 'revert' ? h('p', {}, `${num(e.from)} → ${num(e.to)}`) : null,

@@ -24,7 +24,7 @@ import { traceClaim } from './trace.js';
 import { claimChecks, worst } from './checks.js';
 import { loadEvents, saveEvents, appendEvent, verifiedEvent, effectiveValue } from './events.js';
 import { recordView, loadViews } from './viewlog.js';
-import { actor } from './roles.js';
+import { actor, can } from './roles.js';
 import { renderTopbar } from './views/topbar.js';
 import { renderPicker } from './views/picker.js';
 import { renderClaim } from './views/claim.js';
@@ -67,7 +67,7 @@ const on = {
   attention(flag) { state.onlyAttention = flag; render(); },
   group(key, open) { state.groupsOpen.set(key, open); }, // remembered across redraws; no redraw needed
   passed(open) { state.passedOpen = open; }, // remembered across redraws; no redraw needed
-  role(roleKey) { state.role = roleKey; render(); refreshViews(); }, // the log is only readable by some roles
+  role(roleKey) { state.role = roleKey; render(); refreshViews(); refreshEvents(); }, // the log is only readable by some roles
   add(event) {
     if (state.loadError) return;
     state.events = [...state.events, event];
@@ -84,11 +84,11 @@ const on = {
   },
   async retry() {
     if (state.loadError) {
-      try { state.events = await loadEvents(); state.loadError = false; } catch { /* still down */ }
+      try { state.events = await loadEvents(roleLabel()); state.loadError = false; } catch { /* still down */ }
       render();
     } else if (state.unsaved.length) flush();
     else { // nothing of ours is waiting: just fetch the server's list again (never overwrite it)
-      try { state.events = await loadEvents(); state.saveError = false; } catch { state.saveError = true; }
+      try { state.events = await loadEvents(roleLabel()); state.saveError = false; } catch { state.saveError = true; }
       render();
     }
   },
@@ -127,7 +127,7 @@ async function start(packet) {
   els.app.append(els.picker, els.claim, els.source);
   state.index = buildIndex(packet);
   try {
-    state.events = await loadEvents();
+    state.events = await loadEvents(roleLabel());
   } catch {
     state.events = [];
     state.loadError = true; // banner: could not load saved work, saving is off until you reload
@@ -179,7 +179,7 @@ async function flush() {
       }
     }
     state.saveError = false;
-    try { state.events = await loadEvents(); } catch { /* keep what is on screen */ }
+    try { state.events = await loadEvents(roleLabel()); } catch { /* keep what is on screen */ }
     render();
   } finally {
     flushing = false;
@@ -209,10 +209,22 @@ function setKey(key) {
   trackView(key, 'line');
 }
 
+/** The view log of one line, or [] without asking the server when this role may not read it (avoids a pointless 403). */
+const readViews = async (key) => (can(state.role, 'viewlog') ? loadViews(key, roleLabel()) : []);
+
+/** The label the server knows the current role by (e.g. 'Reviewer'). */
+const roleLabel = () => actor(state.index.packet, state.role).role;
+
+/** Different roles may read different events (private questions), so switching role reloads them. */
+async function refreshEvents() {
+  if (!state.index || state.loadError || state.unsaved.length) return;
+  try { state.events = await loadEvents(roleLabel()); render(); } catch { /* keep what is on screen */ }
+}
+
 /** Reload the view log of the open line for the current role (used after switching role). */
 async function refreshViews() {
   const key = state.key;
-  state.viewsFor = { key, list: await loadViews(key, actor(state.index.packet, state.role).role) };
+  state.viewsFor = { key, list: await readViews(key) };
   if (state.key === key) render();
 }
 
@@ -221,7 +233,7 @@ async function trackView(target, kind) {
   const who = actor(state.index.packet, state.role);
   await recordView(target, kind, who);
   if (kind !== 'line' || state.key !== target) return;
-  state.viewsFor = { key: target, list: await loadViews(target, who.role) };
+  state.viewsFor = { key: target, list: await readViews(target) };
   if (state.key === target) render();
 }
 
@@ -259,12 +271,12 @@ async function syncFromServer() {
   if (!state.index || state.loadError || state.unsaved.length || document.hidden) return;
   let changed = false;
   try {
-    const events = await loadEvents();
+    const events = await loadEvents(roleLabel());
     if (events.length !== state.events.length) { state.events = events; changed = true; }
   } catch { /* server unreachable: keep what is on screen */ }
   const key = state.key;
   const role = actor(state.index.packet, state.role).role;
-  const views = await loadViews(key, role);
+  const views = await readViews(key);
   if (state.viewsFor?.key !== key || state.viewsFor.list.length !== views.length) {
     state.viewsFor = { key, list: views };
     changed = true;

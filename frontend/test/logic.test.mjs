@@ -6,7 +6,7 @@ import { buildIndex, docLanding } from '../src/packetIndex.js';
 import { traceClaim } from '../src/trace.js';
 import { printedMatch, duplicateDoc, duplicatePage, claimChecks, worst } from '../src/checks.js';
 import { can } from '../src/roles.js';
-import { effectiveValue, signoffState, taxEffect, signoffBlocker } from '../src/events.js';
+import { questionsFor, openQuestionCount, effectiveValue, signoffState, taxEffect, signoffBlocker } from '../src/events.js';
 
 const packet = JSON.parse(readFileSync(new URL('../../backend/data/packet.json', import.meta.url)));
 const index = buildIndex(packet);
@@ -134,6 +134,22 @@ test('related: last years value for the same line, and lines sharing evidence', 
 test('evidence: staff can add it, the client and administrator cannot', () => {
   for (const r of ['preparer', 'reviewer', 'partner']) assert.equal(can(r, 'evidence'), true);
   for (const r of ['client', 'admin']) assert.equal(can(r, 'evidence'), false);
+});
+
+test('questions: an answer attaches to its question, and open ones are counted', () => {
+  const q = { id: 'q1', type: 'question', claim: 'F1040.1a', to: 'Client', text: 'Which W-2 is this?' };
+  const a = { id: 'a1', type: 'answer', claim: 'F1040.1a', answers: 'q1', text: 'The Halvorsen one.' };
+  assert.equal(openQuestionCount([q], 'F1040.1a'), 1);
+  assert.equal(openQuestionCount([q, a], 'F1040.1a'), 0);
+  assert.equal(questionsFor([q, a], 'F1040.1a')[0].a.text, 'The Halvorsen one.');
+  assert.equal(can('client', 'answer'), true);
+  assert.equal(can('client', 'ask'), false);
+});
+
+test('a private question stub is not counted and has no text', () => {
+  const stub = { id: 'q2', type: 'question', claim: 'F1040.1a', private: true };
+  assert.equal(openQuestionCount([stub], 'F1040.1a'), 0);
+  assert.equal(questionsFor([stub], 'F1040.1a')[0].q.private, true);
 });
 
 test('nothing in frontend/src draws text with innerHTML or similar', () => {

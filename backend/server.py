@@ -4,7 +4,7 @@ Run:  python3 backend/server.py        then open http://localhost:3000
 
 What it does
   GET  /api/packet   sends backend/data/packet.json exactly as it is on disk (never modified)
-  GET  /api/events   sends the saved notes / adjustments / sign-offs (backend/data/events.json)
+  GET  /api/events   sends the saved notes / adjustments / sign-offs (backend/data/events.json), minus questions the role may not read (?role=...)
   POST /api/events   adds one event, after rules.py says that role may add that kind (else 403)
   POST /api/views    records that someone opened a line or an evidence item (server adds the time)
   GET  /api/views    the view log, for Reviewer / Partner / Administrator only (?role=...&target=...)
@@ -25,7 +25,7 @@ import threading
 
 from datetime import datetime, timezone
 
-from rules import can_read_views, can_replace_events, check_event, check_view
+from rules import can_read_views, can_replace_events, check_event, check_view, visible_events
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
@@ -65,7 +65,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(404, {"error": "Put packet.json in backend/data/"})
             return self.send(200, PACKET.read_bytes())
         if path == "/api/events":
-            return self.send(200, EVENTS.read_bytes() if EVENTS.exists() else "[]")
+            role = (parse_qs(urlparse(self.path).query).get("role") or [""])[0]
+            events = json.loads(EVENTS.read_text(encoding="utf-8")) if EVENTS.exists() else []
+            return self.send_json(200, visible_events(events, role))  # private questions are hidden from other roles
         if path == "/api/views":
             query = parse_qs(urlparse(self.path).query)
             role = (query.get("role") or [""])[0]

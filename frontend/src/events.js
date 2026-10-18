@@ -8,8 +8,9 @@
 
 const API = '/api/events';
 
-export async function loadEvents() {
-  const response = await fetch(API);
+/** The saved events this role may read (private questions between other people arrive as bare stubs). */
+export async function loadEvents(role) {
+  const response = await fetch(`${API}?${new URLSearchParams({ role })}`);
   if (!response.ok) throw new Error('Could not load events');
   return response.json();
 }
@@ -106,3 +107,13 @@ export function taxEffect(version, lineKey, delta) {
     estimated: true,
   };
 }
+
+/** The questions on a line, each with its answer (or null), oldest first. */
+export function questionsFor(events, claim) {
+  return eventsFor(events, claim)
+    .filter((e) => e.type === 'question')
+    .map((q) => ({ q, a: events.find((e) => e.type === 'answer' && e.answers === q.id) ?? null }));
+}
+
+/** How many questions on this line are still waiting for an answer. */
+export const openQuestionCount = (events, claim) => questionsFor(events, claim).filter((p) => !p.a && !p.q.private).length;
