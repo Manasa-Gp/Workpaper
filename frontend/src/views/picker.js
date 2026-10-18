@@ -9,7 +9,7 @@
 
 import { h, clear } from '../dom.js';
 import { num } from '../format.js';
-import { effectiveValue, signoffState, openQuestionCount, openReviewPoints } from '../events.js';
+import { effectiveValue, signoffState, openQuestionCount, openReviewPoints, filedEvent, filedValue } from '../events.js';
 import { inbox } from './inbox.js';
 import { approval } from './approval.js';
 import { activity } from './activity.js';
@@ -83,7 +83,7 @@ function row(line, state, on) {
     h('span', { class: `glyph s-${status}`, title: WORDS[status], 'aria-label': WORDS[status] }, GLYPH[status]),
     h('span', { class: 'row-text' },
       h('span', { class: 'row-label' }, line.label),
-      h('span', { class: 'row-key' }, line.key, adjusted ? ' · adjusted' : '', so === 'signed' ? ' · signed off' : so === 'reopened' ? ' · reopened' : '', open ? ` · ${open} open question${open === 1 ? '' : 's'}` : '', points ? ` · ${points} review point${points === 1 ? '' : 's'}` : ''),
+      h('span', { class: 'row-key' }, line.key, adjusted && !filedEvent(state.events) ? ' · adjusted' : '', filedEvent(state.events) && value !== filedValue(state.events, line.key) && filedValue(state.events, line.key) !== null ? ' · amended' : '', so === 'signed' ? ' · signed off' : so === 'reopened' ? ' · reopened' : '', open ? ` · ${open} open question${open === 1 ? '' : 's'}` : '', points ? ` · ${points} review point${points === 1 ? '' : 's'}` : ''),
     ),
     h('span', { class: 'row-value' }, typeof value === 'number' ? num(value) : String(value)),
   );

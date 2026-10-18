@@ -7,6 +7,8 @@
 import { h } from '../dom.js';
 import { day, dayTime } from '../format.js';
 import { filingStatus, filingTimeline, rejections } from '../filing.js';
+import { amendmentsOf, filedEvent } from '../events.js';
+import { num } from '../format.js';
 
 const DOT = { accepted: '✓', rejected: '×', not_transmitted: '!' };
 
@@ -25,6 +27,7 @@ export function filing(state, on) {
     status.extendedTo
       ? h('p', { class: 'muted' }, `Extended to ${day(`${status.extendedTo}T12:00:00`)}. ${status.onTime ? 'Filed within the extension.' : 'Not filed within the extension.'}`)
       : null,
+    frozen(state, on),
     h('ol', { class: 'filing-list' }, items.map((item) => h('li', { class: `f-${item.status ?? item.kind}` },
       h('p', {}, h('span', { class: 'f-mark', 'aria-hidden': 'true' }, DOT[item.status] ?? '•'), ' ', h('strong', {}, item.title)),
       h('p', { class: 'muted' }, item.dateOnly ? day(item.at) : dayTime(item.at)),
@@ -38,5 +41,24 @@ export function filing(state, on) {
         ? h('p', {}, 'Lines it concerns: ', help.lines.map((key) => h('button', { type: 'button', class: 'linkish', onClick: () => on.select(key) }, key)))
         : null,
     )),
+  );
+}
+
+/** "Frozen at filing" and the amendments layered on top of it. Empty until the Partner marks the return filed. */
+function frozen(state, on) {
+  const filed = filedEvent(state.events);
+  if (!filed) return null;
+  const amends = amendmentsOf(state.events);
+  return h('div', { class: 'frozen' },
+    h('h3', {}, 'Frozen at filing'),
+    h('p', {}, `${filed.by.name} (${filed.by.role}) marked the return filed on ${dayTime(filed.at)}. ${Object.keys(filed.snapshot).length} numbers are kept exactly as filed.`),
+    h('p', { class: 'muted' }, `Fingerprint ${filed.fingerprint}`),
+    h('h3', {}, amends.length ? `Amendments on top (${amends.length})` : 'Amendments on top'),
+    amends.length
+      ? amends.map((e) => h('div', { class: 'amend-item' },
+        h('p', {}, h('button', { type: 'button', class: 'linkish', onClick: () => on.select(e.claim) }, e.claim), `  ${num(e.from)} → ${num(e.to)}`),
+        h('p', { class: 'muted' }, `${e.text} · ${e.by.name} · ${dayTime(e.at)}`),
+      ))
+      : h('p', { class: 'muted' }, 'None. Any change from now on is added here and the filed numbers stay as they are.'),
   );
 }

@@ -4,11 +4,11 @@
 // does not have is disabled and says why. Names come from packet.firm.staff.
 
 export const ROLES = {
-  preparer: { label: 'Preparer', staffId: 'st-01', can: ['note', 'adjust', 'evidence', 'ask', 'answer', 'seepoints', 'done'] },
+  preparer: { label: 'Preparer', staffId: 'st-01', can: ['note', 'adjust', 'amend', 'evidence', 'ask', 'answer', 'seepoints', 'done'] },
   // A second preparer the firm has NOT cleared for sensitive data (packet: Marcus Bell, st-04). Same work, but no Reveal.
-  preparer2: { label: 'Preparer', staffId: 'st-04', can: ['note', 'adjust', 'evidence', 'ask', 'answer', 'seepoints', 'done'] },
+  preparer2: { label: 'Preparer', staffId: 'st-04', can: ['note', 'adjust', 'amend', 'evidence', 'ask', 'answer', 'seepoints', 'done'] },
   reviewer: { label: 'Reviewer', staffId: 'st-02', can: ['note', 'evidence', 'ask', 'answer', 'verify', 'signoff', 'viewlog', 'block', 'clear', 'seepoints', 'assign', 'done', 'present'] },
-  partner: { label: 'Partner', staffId: 'st-03', can: ['note', 'evidence', 'ask', 'answer', 'verify', 'signoff', 'viewlog', 'block', 'clear', 'seepoints', 'assign', 'done', 'present'] },
+  partner: { label: 'Partner', staffId: 'st-03', can: ['note', 'evidence', 'ask', 'answer', 'verify', 'signoff', 'viewlog', 'block', 'clear', 'seepoints', 'assign', 'done', 'present', 'file'] },
   client: { label: 'Client', staffId: null, can: ['answer', 'approve'] },
   admin: { label: 'Administrator', staffId: 'st-05', can: ['reset', 'viewlog'] },
 };
@@ -50,5 +50,7 @@ export const WHY_NOT = {
   done: 'This task is for someone else.',
   present: 'Only a reviewer or partner can present the return for approval.',
   approve: 'Only the client approves and signs the return.',
+  file: 'Only the partner marks the return as filed.',
+  amend: 'Only a preparer can amend a filed number.',
   reset: 'Only the administrator can reset saved work.',
 };

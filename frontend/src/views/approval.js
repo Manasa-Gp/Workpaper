@@ -9,7 +9,7 @@
 
 import { h } from '../dom.js';
 import { actor, can, WHY_NOT } from '../roles.js';
-import { allOpenReviewPoints, approvalState, newEvent, returnFingerprint, signersOf, RETURN_KEY } from '../events.js';
+import { allOpenReviewPoints, amendmentsOf, approvalState, filedEvent, newEvent, returnFingerprint, signersOf, snapshotOf, RETURN_KEY } from '../events.js';
 import { dayTime } from '../format.js';
 
 const WORDS = {
@@ -26,6 +26,28 @@ export function approval(state, on) {
   const fingerprint = returnFingerprint(state.index.current.lines, state.events);
   const now = approvalState(state.events, fingerprint, signers);
   const open = allOpenReviewPoints(state.events).length;
+
+  // Once the Partner has marked the return filed it is frozen: nothing to present, sign or adjust any more.
+  const filed = filedEvent(state.events);
+  if (filed) {
+    const amended = amendmentsOf(state.events).length;
+    return h('details', { class: 'approval', open: true },
+      h('summary', {}, 'Return approval ', h('span', { class: 'pill p-pass' }, 'Filed')),
+      h('p', {}, 'Filed and frozen. The numbers that were filed cannot be changed; a correction is an amendment on top.'),
+      h('p', { class: 'muted' }, `Marked filed by ${filed.by.name} (${filed.by.role}) · ${dayTime(filed.at)}`),
+      h('p', { class: 'muted' }, `Fingerprint ${filed.fingerprint} · ${Object.keys(filed.snapshot).length} numbers kept`),
+      amended ? h('p', {}, `${amended} amendment${amended === 1 ? '' : 's'} since filing (see the Filing panel).`) : null,
+    );
+  }
+  const fileIt = h('button', {
+    type: 'button', class: 'btn btn-primary',
+    title: 'Freezes every number as it stands now',
+    onClick: () => on.add(newEvent({
+      claim: RETURN_KEY, type: 'file', by: { name: who.name, role: who.role },
+      fingerprint, presents: now.present.id, snapshot: snapshotOf(state.index.current.lines, state.events),
+      text: 'Marked the return filed and froze every number.',
+    })),
+  }, 'Mark as filed (freezes the return)');
 
   const present = h('button', {
     type: 'button', class: 'btn btn-primary',
@@ -63,6 +85,8 @@ export function approval(state, on) {
     now.signed.map((e) => h('p', { class: 'muted' }, `✓ ${e.signer} signed · ${dayTime(e.at)}${now.state === 'stale' ? ' (no longer covers the current numbers)' : ''}`)),
     canSign ? now.missing.map(signRow) : null,
     state.role === 'client' && now.state === 'none' ? h('p', { class: 'muted' }, 'Your accountant has not sent the return for your approval yet.') : null,
+    now.state === 'approved' && can(state.role, 'file') ? fileIt : null,
+    now.state === 'approved' && !can(state.role, 'file') ? h('p', { class: 'muted' }, 'The Partner marks the return as filed.') : null,
     can(state.role, 'present') ? present : null,
     can(state.role, 'present') && blocked ? h('p', { class: 'muted' }, blocked) : null,
   );

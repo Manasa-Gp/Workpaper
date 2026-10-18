@@ -282,3 +282,7 @@ dl.record dt { color: var(--ink-2); }
 dl.record dd { margin: 0; overflow-wrap: anywhere; }
 dl.record dl.record { margin: 0; padding-left: 8px; border-left: 2px solid var(--line); }
 .record-list { margin: 0; padding-left: 18px; }
+
+/* ---- freeze at filing ---- */
+.frozen { border-top: 1px solid var(--line, #ddd); margin-top: 0.5rem; padding-top: 0.25rem; }
+.amend-item { margin: 0.25rem 0 0.5rem; }

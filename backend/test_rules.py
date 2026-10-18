@@ -1,5 +1,5 @@
 """Run:  python3 backend/test_rules.py"""
-from rules import signers, open_blocks, visible_events, can_read_views, can_replace_events, check_event, check_view
+from rules import signers, open_blocks, visible_events, can_read_views, can_replace_events, check_event, check_view, filed_event
 
 
 def ev(role, kind):
@@ -124,4 +124,51 @@ assert "already signed" in check_event(apr(), [pre(), apr()])
 assert check_event(apr("Erik Lindqvist"), [pre(), apr()]) is None                  # the spouse can still sign
 for role in ("Preparer", "Reviewer", "Partner", "Client", "Administrator"):
     assert visible_events([pre(), apr()], role) == [pre(), apr()]                  # everyone sees the return's status
+
+# ---- freeze at filing, amend on top ----
+def fil(fp="F1", pid="p1", role="Partner", snap=None):
+    return {**ev(role, "file"), "id": "f1", "claim": "RETURN", "fingerprint": fp, "presents": pid, "snapshot": snap if snap is not None else {"F1040.1a": 100, "F1040.1z": 200}}
+def amd(frm=100, to=150, text="Client sent a corrected W-2 on 3 Nov", claim="F1040.1a", role="Preparer"):
+    return {**ev(role, "amend"), "claim": claim, "from": frm, "to": to, "text": text}
+def sgn(value): return {**ev("Reviewer", "signoff"), "claim": "F1040.1a", "valueAtSignoff": value}
+approved = [pre(), apr(), apr("Erik Lindqvist")]
+assert filed_event(approved) is None
+assert check_event(fil(), approved) is None                                         # approved by both: the Partner can file
+assert "may not" in check_event(fil(role="Reviewer"), approved)                    # only the Partner files
+assert "may not" in check_event(fil(role="Preparer"), approved)
+assert "may not" in check_event(fil(role="Client"), approved)
+assert "not been presented" in check_event(fil(), [])
+assert "Not everyone has signed" in check_event(fil(), [pre(), apr()])             # the spouse has not signed
+assert "numbers have changed" in check_event(fil("F2"), approved)                  # numbers moved after approval
+assert "not the version" in check_event(fil(pid="zzz"), approved)
+assert "Review points are still open" in check_event(fil(), approved + [blk()])
+assert "snapshot" in check_event(fil(snap={}), approved)
+assert "already filed" in check_event(fil(), approved + [fil()])
+filed = approved + [fil()]
+assert filed_event(filed)["fingerprint"] == "F1"
+# after filing the numbers are frozen
+assert "frozen" in check_event(adj(), filed)                                       # no adjusting
+assert "frozen" in check_event(ev("Preparer", "revert"), filed)                    # no reverting
+assert "frozen" in check_event(pre("F2", "p2"), filed)                             # no presenting again
+assert "frozen" in check_event(apr("Erik Lindqvist"), filed)                       # no new signatures
+assert "frozen" in check_event(sgn(100), filed)                                     # no sign-off on an unamended line
+assert check_event({**ev("Preparer", "note"), "claim": "F1040.1a"}, filed) is None  # notes still work
+assert check_event({**ev("Reviewer", "evidence"), "claim": "F1040.1a"}, filed) is None
+# amendments
+assert "not been filed" in check_event(amd(), approved)                            # nothing to amend before filing
+assert check_event(amd(), filed) is None
+assert "may not" in check_event(amd(role="Reviewer"), filed)
+assert "not on the filed return" in check_event(amd(claim="Nope.1"), filed)
+assert "changed since" in check_event(amd(frm=99), filed)                          # stale "from"
+assert "same as" in check_event(amd(to=100), filed)
+assert "reason" in check_event(amd(text="fix"), filed)
+assert "old and the new" in check_event({**amd(), "to": "150"}, filed)
+assert "old and the new" in check_event({**amd(), "to": True}, filed)
+assert "changed since" in check_event(amd(frm=100, to=170), filed + [amd()])       # the line now stands at 150
+assert check_event(amd(frm=150, to=170), filed + [amd()]) is None                  # a second amendment chains on the first
+assert check_event(sgn(150), filed + [amd()]) is None                               # an amended line can be signed
+assert "already signed" in check_event(sgn(150), filed + [amd(), sgn(150)])
+assert check_event(sgn(170), filed + [amd(), sgn(150), amd(150, 170)]) is None       # and re-signed after another amendment
+for role in ("Preparer", "Reviewer", "Partner", "Client", "Administrator"):
+    assert [e for e in visible_events(filed + [amd()], role) if e["type"] in ("file", "amend")]   # everyone sees filed status
 print("rules ok")

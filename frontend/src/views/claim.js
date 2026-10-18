@@ -19,7 +19,7 @@ import { traceClaim } from '../trace.js';
 import { rejectionsForLine, maskSsn } from '../filing.js';
 import { claimChecks, worst } from '../checks.js';
 import { num, signed, dayTime, dueDay } from '../format.js';
-import { EVENT_LABEL, effectiveValue, questionsFor, reviewPointsFor, assignmentsFor, eventsFor, verifiedEvent, signoffBlocker, signoffState, taxEffect, newEvent } from '../events.js';
+import { EVENT_LABEL, filedEvent, filedValue, effectiveValue, questionsFor, reviewPointsFor, assignmentsFor, eventsFor, verifiedEvent, signoffBlocker, signoffState, taxEffect, newEvent } from '../events.js';
 import { actor, can, WHY_NOT } from '../roles.js';
 
 const LABEL = { pass: 'Pass', warn: 'Look at this', fail: 'Failed', na: 'Not applicable' };
@@ -38,7 +38,10 @@ export function renderClaim(el, state, on) {
   const waiting = checks.filter((c) => c.verify && !verifiedBy(c, state, line)).length;
   // "pass" is only true once every check that asks for a person's confirmation has it.
   const status = worst(checks) === 'pass' && waiting ? 'warn' : worst(checks);
-  const adjusted = value !== line.value;
+  const frozen = Boolean(filedEvent(state.events));
+  const filedAt = filedValue(state.events, line.key);
+  const amended = frozen && filedAt !== null && value !== filedAt;
+  const adjusted = value !== line.value && !frozen;
   const so = signoffState(line, state.events);
   const notes = eventsFor(state.events, line.key);
 
@@ -50,6 +53,8 @@ export function renderClaim(el, state, on) {
       h('div', { class: 'pills' },
         pill(status, waiting && status === 'warn' ? `${waiting} waiting for verification` : status === 'pass' ? 'All checks pass' : status === 'na' ? 'Calculated line' : LABEL[status]),
         adjusted ? h('span', { class: 'pill p-info' }, `Adjusted from engine value ${num(line.value)}`) : null,
+        frozen && filedAt !== null && !amended ? h('span', { class: 'pill p-info' }, 'Filed: frozen') : null,
+        amended ? h('span', { class: 'pill p-warn' }, `Amended after filing: filed as ${num(filedAt)}`) : null,
         so.state === 'signed' ? h('span', { class: 'pill p-pass' }, `Signed off by ${so.last.by.name}`) : null,
         so.state === 'reopened' ? h('span', { class: 'pill p-warn' }, `Sign-off reopened: value changed from ${num(so.last.valueAtSignoff)}`) : null,
       ),
@@ -503,7 +508,7 @@ function actions(state, line, value, checks, on) {
     signButton.setAttribute('title', blocked);
   }
 
-  const revert = value !== line.value && can(state.role, 'adjust')
+  const revert = value !== line.value && can(state.role, 'adjust') && !filedEvent(state.events)
     ? h('button', {
         type: 'button', class: 'btn btn-quiet',
         onClick: () => on.add(newEvent({ claim: line.key, type: 'revert', by: { name: who.name, role: who.role }, from: value, to: line.value, text: 'Reverted to the engine value.' })),
@@ -512,7 +517,7 @@ function actions(state, line, value, checks, on) {
 
   return h('div', { class: 'actions' },
     h('div', { class: 'action' }, noteBox, addNote),
-    h('div', { class: 'action' }, h('div', { class: 'row2' }, newValue, reason),
+    filedEvent(state.events) ? amendAction(state, line, value, who, gate, on) : h('div', { class: 'action' }, h('div', { class: 'row2' }, newValue, reason),
       h('p', { class: 'muted' }, 'This changes this line only. Lines that use it are not recalculated.'),
       preview, h('div', { class: 'btns' }, adjust, revert)),
     h('div', { class: 'action' }, signButton,
@@ -527,11 +532,35 @@ function history(events) {
       const what = EVENT_LABEL[e.type];
       return h('li', {},
         h('p', { class: 'hist-head' }, h('strong', {}, what), ` · ${e.by.name} (${e.by.role}) · ${dayTime(e.at)}`),
-        e.type === 'adjust' || e.type === 'revert' ? h('p', {}, `${num(e.from)} → ${num(e.to)}`) : null,
+        e.type === 'adjust' || e.type === 'revert' || e.type === 'amend' ? h('p', {}, `${num(e.from)} → ${num(e.to)}`) : null,
         e.type === 'signoff' ? h('p', {}, `Covers the value ${num(e.valueAtSignoff)}.`) : null,
         e.text ? h('p', { class: 'hist-text' }, e.text) : null,
         e.taxEffect ? h('p', { class: 'muted' }, `Estimated tax effect: federal ${signed(e.taxEffect.federal)}, California ${signed(e.taxEffect.california)}.`) : null,
       );
     }),
   );
+}
+
+/** After filing the adjust form is replaced by this one: the filed number stays, the amendment sits on top. */
+function amendAction(state, line, value, who, gate, on) {
+  const amendValue = h('input', { id: 'amend-value', type: 'number', step: 'any', placeholder: `Amended value (now ${num(value)})`, 'aria-label': 'Amended value' });
+  const amendReason = h('input', { id: 'amend-reason', type: 'text', placeholder: 'Why (at least 15 characters)', 'aria-label': 'Reason for the amendment' });
+  const msg = h('p', { class: 'muted', id: 'amend-preview' });
+  const go = gate('amend', h('button', {
+    type: 'button', class: 'btn',
+    onClick: () => {
+      const to = Number(amendValue.value);
+      const why = amendReason.value.trim();
+      if (amendValue.value === '' || Number.isNaN(to) || why.length < 15) { msg.textContent = 'Enter an amended value and a reason of at least 15 characters.'; return; }
+      amendValue.value = '';
+      amendReason.value = '';
+      on.add(newEvent({
+        claim: line.key, type: 'amend', by: { name: who.name, role: who.role },
+        from: value, to, text: why, taxEffect: taxEffect(state.index.current, line.key, to - value),
+      }));
+    },
+  }, 'Amend filed number'));
+  return h('div', { class: 'action' }, h('div', { class: 'row2' }, amendValue, amendReason),
+    h('p', { class: 'muted' }, 'The return is filed and frozen. This does not change the filed number: it adds an amendment on top.'),
+    msg, h('div', { class: 'btns' }, go));
 }

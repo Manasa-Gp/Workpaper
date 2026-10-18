@@ -18,9 +18,9 @@ from pathlib import Path
 
 # role label (as written in event["by"]["role"]) -> event types that role may add
 ALLOWED = {
-    "Preparer": {"note", "adjust", "revert", "evidence", "question", "answer", "done"},
+    "Preparer": {"note", "adjust", "revert", "evidence", "question", "answer", "done", "amend"},
     "Reviewer": {"note", "evidence", "verify", "signoff", "question", "answer", "block", "clear", "assign", "done", "present"},
-    "Partner": {"note", "evidence", "verify", "signoff", "question", "answer", "block", "clear", "assign", "done", "present"},
+    "Partner": {"note", "evidence", "verify", "signoff", "question", "answer", "block", "clear", "assign", "done", "present", "file"},
     "Client": {"answer", "approve"},  # the client answers questions and approves/signs the return; nothing else
     "Administrator": set(),
 }
@@ -40,6 +40,12 @@ def check_event(event, events=()):
         return f"Unknown event type: {kind!r}."
     if kind not in ALLOWED[role]:
         return f"A {role} may not add a '{kind}' event."
+    if kind == "file":
+        return _check_file(event, events)
+    if kind == "amend":
+        return _check_amend(event, events)
+    if kind in FROZEN_KINDS and filed_event(events):
+        return f"The return is filed and frozen. A '{kind}' event is no longer allowed; amend the line instead."
     if kind == "question" and event.get("to") not in ("Client", "Preparer", "Reviewer", "Partner"):
         return "A question must say who it is for."
     if kind == "answer":
@@ -57,6 +63,8 @@ def check_event(event, events=()):
     if kind == "done":
         return _check_done(event, events, role)
     if kind == "signoff":
+        if filed_event(events) and not any(e.get("type") == "amend" and e.get("claim") == event.get("claim") for e in events):
+            return "The return is filed and frozen. Only a line that has been amended can be signed off."
         if open_blocks(events, event.get("claim")):
             return "This line has open review points. Clear them before signing off."
         if _already_signed(event, events):
@@ -91,6 +99,79 @@ def signers():
 def _latest(events, kind):
     found = [e for e in events if e.get("type") == kind]
     return found[-1] if found else None
+
+
+# ---- freeze at filing, amend on top ---------------------------------------------------------
+# The Partner's 'file' event keeps a snapshot of every number and the fingerprint the client signed.
+# From then on the numbers cannot be adjusted, reverted, presented or signed again. A change is an
+# 'amend' event layered on top; the snapshot in the 'file' event is never touched.
+
+FROZEN_KINDS = ("adjust", "revert", "present", "approve")
+MIN_REASON = 15
+MAX_SNAPSHOT = 5000
+
+
+def filed_event(events):
+    """The 'file' event, or None while the return is still open."""
+    return _latest(events, "file")
+
+
+def _is_number(x):
+    return isinstance(x, (int, float)) and not isinstance(x, bool)
+
+
+def _check_file(event, events):
+    if filed_event(events):
+        return "The return is already filed."
+    fingerprint = event.get("fingerprint")
+    if not isinstance(fingerprint, str) or not fingerprint or len(fingerprint) > 64:
+        return "Filing needs the fingerprint of the return."
+    if any(e.get("type") == "block" for e in events) and open_return_points(events):
+        return "Review points are still open. Clear them before filing."
+    present = _latest(events, "present")
+    if present is None:
+        return "The return has not been presented to the client yet."
+    if present.get("id") != event.get("presents"):
+        return "That is not the version the client approved."
+    if present.get("fingerprint") != fingerprint:
+        return "The numbers have changed since the client approved them."
+    signed = {e.get("signer") for e in events if e.get("type") == "approve" and e.get("presents") == present.get("id")}
+    missing = [n for n in signers() if n not in signed]
+    if missing:
+        return f"Not everyone has signed yet: {', '.join(missing)}."
+    snapshot = event.get("snapshot")
+    if not isinstance(snapshot, dict) or not snapshot or len(snapshot) > MAX_SNAPSHOT:
+        return "Filing must keep a snapshot of the numbers."
+    return None
+
+
+def open_return_points(events):
+    cleared = {e.get("clears") for e in events if e.get("type") == "clear"}
+    return [e for e in events if e.get("type") == "block" and e.get("id") not in cleared]
+
+
+def current_value(filed, events, claim):
+    """What a line stands at after filing: the last amendment, otherwise the filed number."""
+    amends = [e for e in events if e.get("type") == "amend" and e.get("claim") == claim]
+    return amends[-1].get("to") if amends else filed.get("snapshot", {}).get(claim)
+
+
+def _check_amend(event, events):
+    filed = filed_event(events)
+    if filed is None:
+        return "Nothing to amend: the return has not been filed. Adjust the number instead."
+    claim = event.get("claim")
+    if claim not in filed.get("snapshot", {}):
+        return "That line is not on the filed return."
+    if not (_is_number(event.get("from")) and _is_number(event.get("to"))):
+        return "An amendment needs the old and the new number."
+    if event.get("from") != current_value(filed, events, claim):
+        return "The number has changed since you opened it. Reload and try again."
+    if event.get("to") == event.get("from"):
+        return "The amended number is the same as the current one."
+    if len(str(event.get("text", "")).strip()) < MIN_REASON:
+        return f"An amendment needs a reason of at least {MIN_REASON} characters."
+    return None
 
 
 def _check_present(event, events):
@@ -182,7 +263,7 @@ def _already_signed(event, events):
             last = i
     if last is None:
         return False
-    changed_since = any(e.get("type") in ("adjust", "revert") for e in mine[last + 1:])
+    changed_since = any(e.get("type") in ("adjust", "revert", "amend") for e in mine[last + 1:])
     return not changed_since and mine[last].get("valueAtSignoff") == event.get("valueAtSignoff")
 
 

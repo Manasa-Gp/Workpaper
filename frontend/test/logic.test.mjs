@@ -8,7 +8,7 @@ import { printedMatch, duplicateDoc, duplicatePage, claimChecks, worst } from '.
 import { can, canSeeSensitive } from '../src/roles.js';
 import { maskDeep, maskText, maskNumber, hasSecrets } from '../src/mask.js';
 import { filingTimeline, filingStatus, rejections, rejectionsForLine, ssnMismatch, maskSsn } from '../src/filing.js';
-import { questionsFor, openQuestionCount, effectiveValue, signoffState, taxEffect, signoffBlocker, openReviewPoints, reviewPointsFor, assignmentsFor, inboxFor, returnFingerprint, approvalState, signersOf, allOpenReviewPoints, EVENT_LABEL } from '../src/events.js';
+import { questionsFor, openQuestionCount, effectiveValue, signoffState, taxEffect, signoffBlocker, openReviewPoints, reviewPointsFor, assignmentsFor, inboxFor, returnFingerprint, approvalState, signersOf, allOpenReviewPoints, EVENT_LABEL, filedEvent, snapshotOf, amendmentsOf, filedValue } from '../src/events.js';
 
 const packet = JSON.parse(readFileSync(new URL('../../backend/data/packet.json', import.meta.url)));
 const index = buildIndex(packet);
@@ -273,6 +273,30 @@ test('masking: who may reveal sensitive numbers', () => {
   changed.firm.staff.find((s) => s.id === 'st-01').sensitive_data_clearance = false;
   assert.equal(canSeeSensitive(changed, 'preparer'), false);
   assert.equal(packet.firm.staff.find((s) => s.id === 'st-04').name, 'Marcus Bell');
+});
+
+test('freeze at filing: the snapshot keeps the filed numbers; amendments sit on top', () => {
+  const lines = index.current.lines;
+  const key = lines.find((l) => typeof l.value === 'number').key;
+  const fp = returnFingerprint(lines, []);
+  const file = { id: 'f1', type: 'file', claim: 'RETURN', fingerprint: fp, snapshot: snapshotOf(lines, []), by: { name: 'H', role: 'Partner' } };
+  assert.equal(filedEvent([]), undefined);
+  assert.equal(filedEvent([file]).id, 'f1');
+  assert.equal(filedValue([file], key), lines.find((l) => l.key === key).value);
+  const line = lines.find((l) => l.key === key);
+  const amend = { id: 'a1', type: 'amend', claim: key, from: line.value, to: 424242, by: { name: 'P', role: 'Preparer' } };
+  assert.equal(effectiveValue(line, [file, amend]), 424242, 'the amendment is the number now');
+  assert.equal(filedValue([file, amend], key), line.value, 'the filed number is untouched');
+  assert.equal(amendmentsOf([file, amend]).length, 1);
+  assert.notEqual(returnFingerprint(lines, [file, amend]), file.fingerprint, 'the return now differs from what was filed');
+  assert.match(signoffBlocker([], [file], key), /filed and frozen/);
+  assert.equal(signoffBlocker([], [file, amend], key), null);
+  assert.equal(signoffState(line, [file, amend, { type: 'signoff', claim: key, valueAtSignoff: line.value, by: {} }]).state, 'reopened');
+  for (const type of ['file', 'amend']) assert.ok(EVENT_LABEL[type]);
+  assert.equal(can('partner', 'file'), true);
+  assert.equal(can('reviewer', 'file'), false);
+  assert.equal(can('preparer', 'amend'), true);
+  assert.equal(can('reviewer', 'amend'), false);
 });
 
 test('a private question stub is not counted and has no text', () => {

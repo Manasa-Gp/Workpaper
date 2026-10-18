@@ -51,7 +51,7 @@ export const verifiedEvent = (events, claim, verifyKey) =>
 
 /** The number the workpaper currently stands behind. */
 export function effectiveValue(line, events) {
-  const changes = eventsFor(events, line.key).filter((e) => e.type === 'adjust' || e.type === 'revert');
+  const changes = eventsFor(events, line.key).filter((e) => e.type === 'adjust' || e.type === 'revert' || e.type === 'amend');
   return changes.length ? changes[changes.length - 1].to : line.value;
 }
 
@@ -65,6 +65,7 @@ const MIN_NOTE = 15;
 
 export function signoffBlocker(checks, events, claim) {
   const mine = eventsFor(events, claim);
+  if (filedEvent(events) && !mine.some((e) => e.type === 'amend')) return 'The return is filed and frozen. Only an amended line can be signed off.';
   const open = openReviewPoints(events, claim).length;
   if (open) return `${open} review point${open === 1 ? ' is' : 's are'} still open. Clear ${open === 1 ? 'it' : 'them'} before signing.`;
   const waiting = checks.filter((c) => c.verify && !verifiedEvent(events, claim, c.verifyKey));
@@ -168,7 +169,26 @@ export const EVENT_LABEL = {
   note: 'Note', adjust: 'Adjusted', signoff: 'Signed off', revert: 'Reverted', verify: 'Verified',
   evidence: 'Evidence added', question: 'Question', answer: 'Answer', block: 'Review point', clear: 'Review point cleared',
   assign: 'Assigned', done: 'Task done', present: 'Presented for approval', approve: 'Approved and signed',
+  file: 'Filed and frozen', amend: 'Amended after filing',
 };
+
+// ---------- freeze at filing, amend on top ----------
+
+/** The Partner's 'file' event (it holds the snapshot), or undefined while the return is open. */
+export const filedEvent = (events) => [...events].reverse().find((e) => e.type === 'file');
+
+/** Every number on the return as it stands now: the snapshot the 'file' event keeps. */
+export function snapshotOf(lines, events) {
+  const out = {};
+  for (const l of lines) if (l.value !== null && l.value !== undefined) out[l.key] = effectiveValue(l, events);
+  return out;
+}
+
+/** Amendments made after filing, oldest first. */
+export const amendmentsOf = (events) => events.filter((e) => e.type === 'amend');
+
+/** The number as it was filed (null before filing or for a line that was not in the snapshot). */
+export const filedValue = (events, key) => filedEvent(events)?.snapshot?.[key] ?? null;
 
 /** Events about the whole return (not one line) are saved under this key. */
 export const RETURN_KEY = 'RETURN';
