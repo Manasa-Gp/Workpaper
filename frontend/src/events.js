@@ -29,6 +29,11 @@ export async function appendEvent(event) {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(event),
   });
+  if (response.status === 403) { // the server's rules refused it: retrying will never help
+    const refused = new Error('The server refused this event');
+    refused.rejected = true;
+    throw refused;
+  }
   if (!response.ok) throw new Error('Could not save the event');
 }
 

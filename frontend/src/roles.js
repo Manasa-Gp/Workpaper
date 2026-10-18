@@ -5,10 +5,10 @@
 
 export const ROLES = {
   preparer: { label: 'Preparer', staffId: 'st-01', can: ['note', 'adjust', 'evidence'] },
-  reviewer: { label: 'Reviewer', staffId: 'st-02', can: ['note', 'evidence', 'verify', 'signoff'] },
-  partner: { label: 'Partner', staffId: 'st-03', can: ['note', 'evidence', 'verify', 'signoff'] },
+  reviewer: { label: 'Reviewer', staffId: 'st-02', can: ['note', 'evidence', 'verify', 'signoff', 'viewlog'] },
+  partner: { label: 'Partner', staffId: 'st-03', can: ['note', 'evidence', 'verify', 'signoff', 'viewlog'] },
   client: { label: 'Client', staffId: null, can: [] },
-  admin: { label: 'Administrator', staffId: 'st-05', can: ['reset'] },
+  admin: { label: 'Administrator', staffId: 'st-05', can: ['reset', 'viewlog'] },
 };
 
 export function actor(packet, roleKey) {

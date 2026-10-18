@@ -5,6 +5,9 @@ Run:  python3 backend/server.py        then open http://localhost:3000
 What it does
   GET  /api/packet   sends backend/data/packet.json exactly as it is on disk (never modified)
   GET  /api/events   sends the saved notes / adjustments / sign-offs (backend/data/events.json)
+  POST /api/events   adds one event, after rules.py says that role may add that kind (else 403)
+  POST /api/views    records that someone opened a line or an evidence item (server adds the time)
+  GET  /api/views    the view log, for Reviewer / Partner / Administrator only (?role=...&target=...)
   PUT  /api/events   replaces that list with the one in the request body
   anything else      serves the files in ../frontend, so one command runs the whole app
 
@@ -17,14 +20,19 @@ import mimetypes
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 import threading
+
+from datetime import datetime, timezone
+
+from rules import can_read_views, check_event, check_view
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
 FRONTEND = (HERE.parent / "frontend").resolve()
 PACKET = DATA / "packet.json"
 EVENTS = DATA / "events.json"
+VIEWS = DATA / "views.json"   # who opened which line or document (written by the server, never edited)
 PORT = int(os.environ.get("PORT", 3000))
 HOST = os.environ.get("HOST", "127.0.0.1")  # on a host, set HOST=0.0.0.0 so outside visitors can connect
 MAX_BODY = 5_000_000
@@ -58,6 +66,16 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, PACKET.read_bytes())
         if path == "/api/events":
             return self.send(200, EVENTS.read_bytes() if EVENTS.exists() else "[]")
+        if path == "/api/views":
+            query = parse_qs(urlparse(self.path).query)
+            role = (query.get("role") or [""])[0]
+            if not can_read_views(role):
+                return self.send_json(403, {"error": f"A {role or 'visitor'} may not read the view log."})
+            target = (query.get("target") or [None])[0]
+            views = json.loads(VIEWS.read_text(encoding="utf-8")) if VIEWS.exists() else []
+            if target:
+                views = [v for v in views if v.get("target") == target]
+            return self.send_json(200, views)
         if path.startswith("/api/"):
             return self.send_json(404, {"error": "unknown endpoint"})
         self.serve_frontend(path)
@@ -91,23 +109,49 @@ class Handler(BaseHTTPRequestHandler):
         EVENTS.write_text(json.dumps(events, indent=2), encoding="utf-8")
         self.send_json(200, {"ok": True})
     def do_POST(self):
-        if unquote(urlparse(self.path).path) != "/api/events":
+        path = unquote(urlparse(self.path).path)
+        if path not in ("/api/events", "/api/views"):
             return self.send_json(404, {"error": "unknown endpoint"})
         length = int(self.headers.get("Content-Length") or 0)
         if length > MAX_BODY:
             return self.send_json(413, {"error": "too large"})
         try:
-            event = json.loads(self.rfile.read(length))
+            body = json.loads(self.rfile.read(length))
         except ValueError:
             return self.send_json(400, {"error": "not JSON"})
+        if path == "/api/views":
+            return self.post_view(body)
+        event = body
         if not isinstance(event, dict) or not event.get("claim") or not event.get("type"):
             return self.send_json(400, {"error": "expected an event with claim and type"})
         with LOCK:
             events = json.loads(EVENTS.read_text(encoding="utf-8")) if EVENTS.exists() else []
+            reason = check_event(event, events)  # role rules, plus rules that look at history
+            if reason:
+                return self.send_json(403, {"error": reason})
             events.append(event)
             DATA.mkdir(parents=True, exist_ok=True)
             EVENTS.write_text(json.dumps(events, indent=2), encoding="utf-8")
         self.send_json(200, {"ok": True, "count": len(events)})
+
+    def post_view(self, view):
+        if not isinstance(view, dict):
+            return self.send_json(400, {"error": "expected a view record"})
+        reason = check_view(view)
+        if reason:
+            return self.send_json(400, {"error": reason})
+        record = {  # the server writes the time itself, so a client cannot backdate a view
+            "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "target": view["target"],
+            "kind": view["kind"],
+            "by": {"name": str(view["by"].get("name", ""))[:80], "role": view["by"]["role"]},
+        }
+        with LOCK:
+            views = json.loads(VIEWS.read_text(encoding="utf-8")) if VIEWS.exists() else []
+            views.append(record)
+            DATA.mkdir(parents=True, exist_ok=True)
+            VIEWS.write_text(json.dumps(views, indent=2), encoding="utf-8")
+        self.send_json(200, {"ok": True})
 
     def log_message(self, fmt, *args):            # keep the terminal quiet
         pass

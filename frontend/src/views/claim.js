@@ -80,6 +80,8 @@ export function renderClaim(el, state, on) {
 
     related(trace, state, on),
 
+    viewLog(state),
+
     section('Notes, changes and sign-off',
       actions(state, line, value, checks, on),
       history(notes),
@@ -88,6 +90,20 @@ export function renderClaim(el, state, on) {
 }
 
 // ---------- pieces ----------
+
+/** Who has opened this line. Only for the roles that may read the log (roles.js: 'viewlog'). */
+function viewLog(state) {
+  if (!can(state.role, 'viewlog')) return '';
+  const mine = state.viewsFor?.key === state.key ? state.viewsFor.list : null;
+  if (!mine) return '';
+  const recent = [...mine].reverse().slice(0, 8);
+  return section('Who has looked at this',
+    recent.length
+      ? h('ul', { class: 'view-log' }, recent.map((v) => h('li', { class: 'muted' }, `${v.by.name} (${v.by.role}) · ${dayTime(v.at)}`)))
+      : h('p', { class: 'muted' }, 'No views recorded yet.'),
+    mine.length > recent.length ? h('p', { class: 'muted' }, `Showing the latest ${recent.length} of ${mine.length} views.`) : null,
+  );
+}
 
 /** Evidence a person added after the fact (an email, a call, a file). Saved as an 'evidence' event, never into the packet. */
 function addedEvidence(notes, state, line, on) {
@@ -292,7 +308,10 @@ function actions(state, line, value, checks, on) {
     },
   }, 'Adjust number'));
 
-  const blocked = signoffBlocker(checks, state.events, line.key); // a sentence saying why, or null
+  const alreadySigned = signoffState(line, state.events).state === 'signed';
+  const blocked = alreadySigned
+    ? 'Already signed off at this value. It can be signed again after the value changes.'
+    : signoffBlocker(checks, state.events, line.key); // a sentence saying why, or null
   const signButton = gate('signoff', h('button', {
     type: 'button', class: 'btn btn-primary',
     onClick: () => {

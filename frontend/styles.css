@@ -227,3 +227,7 @@ details.passed[open] > summary { margin-bottom: 8px; }
 .added-list { list-style: none; margin: 0 0 8px; padding: 0; }
 .added-list li { margin-bottom: 8px; }
 .added-list p { margin: 0; }
+
+/* Who has looked at this line (views/claim.js viewLog) */
+.view-log { list-style: none; margin: 0; padding: 0; }
+.view-log li { margin-bottom: 4px; }

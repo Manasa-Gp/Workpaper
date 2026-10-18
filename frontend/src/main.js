@@ -23,6 +23,8 @@ import { buildIndex } from './packetIndex.js';
 import { traceClaim } from './trace.js';
 import { claimChecks, worst } from './checks.js';
 import { loadEvents, saveEvents, appendEvent, verifiedEvent, effectiveValue } from './events.js';
+import { recordView, loadViews } from './viewlog.js';
+import { actor } from './roles.js';
 import { renderTopbar } from './views/topbar.js';
 import { renderPicker } from './views/picker.js';
 import { renderClaim } from './views/claim.js';
@@ -43,6 +45,7 @@ const state = {
   saveError: false,
   loadError: false,
   unsaved: [],
+  viewsFor: null, // { key, list }: the view log of the open line, loaded for roles that may read it
 };
 
 const els = {
@@ -59,12 +62,12 @@ const on = {
   select(key) {
     if (location.hash.slice(1) === key) { setKey(key); render(); } else location.hash = key; // hashchange -> setKey
   },
-  source(ref) { state.sourceRef = ref; render({ scrollToMark: true }); },
+  source(ref) { state.sourceRef = ref; render({ scrollToMark: true }); trackView(ref, 'source'); },
   filter(text) { state.filter = text; render(); },
   attention(flag) { state.onlyAttention = flag; render(); },
   group(key, open) { state.groupsOpen.set(key, open); }, // remembered across redraws; no redraw needed
   passed(open) { state.passedOpen = open; }, // remembered across redraws; no redraw needed
-  role(roleKey) { state.role = roleKey; render(); },
+  role(roleKey) { state.role = roleKey; render(); refreshViews(); }, // the log is only readable by some roles
   add(event) {
     if (state.loadError) return;
     state.events = [...state.events, event];
@@ -160,7 +163,13 @@ async function flush() {
       try {
         await appendEvent(state.unsaved[0]);
         state.unsaved = state.unsaved.slice(1);
-      } catch {
+      } catch (err) {
+        if (err.rejected) { // not allowed for this role: drop it instead of retrying forever
+          const refused = state.unsaved[0];
+          state.unsaved = state.unsaved.slice(1);
+          state.events = state.events.filter((e) => e.id !== refused.id);
+          continue;
+        }
         state.saveError = true;
         render();
         return;
@@ -194,6 +203,23 @@ function setKey(key) {
   const flagged = claimChecks(state.index, trace).find((c) => c.ref && (c.status === 'fail' || c.status === 'warn'));
   const first = trace.sources.find((s) => s.kind === 'value') ?? trace.sources[0];
   state.sourceRef = flagged ? flagged.ref : first ? first.ref : null;
+  trackView(key, 'line');
+}
+
+/** Reload the view log of the open line for the current role (used after switching role). */
+async function refreshViews() {
+  const key = state.key;
+  state.viewsFor = { key, list: await loadViews(key, actor(state.index.packet, state.role).role) };
+  if (state.key === key) render();
+}
+
+/** Log that the current role opened something, then (for roles that may) reload the log of the open line. */
+async function trackView(target, kind) {
+  const who = actor(state.index.packet, state.role);
+  await recordView(target, kind, who);
+  if (kind !== 'line' || state.key !== target) return;
+  state.viewsFor = { key: target, list: await loadViews(target, who.role) };
+  if (state.key === target) render();
 }
 
 function render({ scrollToMark = false } = {}) {
@@ -220,6 +246,30 @@ function render({ scrollToMark = false } = {}) {
   if (scrollToMark) document.getElementById('field-mark')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   else document.getElementById('field-mark')?.scrollIntoView({ block: 'nearest' });
 }
+
+/**
+ * A second tab (or another person) may have added events or views since this tab loaded.
+ * When this tab comes back into view, fetch the server's lists and redraw only if they changed,
+ * so text being typed is not wiped for nothing. Skipped while there are unsaved events of our own.
+ */
+async function syncFromServer() {
+  if (!state.index || state.loadError || state.unsaved.length || document.hidden) return;
+  let changed = false;
+  try {
+    const events = await loadEvents();
+    if (events.length !== state.events.length) { state.events = events; changed = true; }
+  } catch { /* server unreachable: keep what is on screen */ }
+  const key = state.key;
+  const role = actor(state.index.packet, state.role).role;
+  const views = await loadViews(key, role);
+  if (state.viewsFor?.key !== key || state.viewsFor.list.length !== views.length) {
+    state.viewsFor = { key, list: views };
+    changed = true;
+  }
+  if (changed && state.key === key) render();
+}
+document.addEventListener('visibilitychange', syncFromServer);
+window.addEventListener('focus', syncFromServer);
 
 window.addEventListener('hashchange', () => {
   if (!state.index) return;
