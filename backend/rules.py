@@ -11,11 +11,13 @@ Honest limit: the demo has no login. The server believes the role written in the
 who is really sending. A real version would check a signed-in user instead.
 """
 
+from datetime import datetime
+
 # role label (as written in event["by"]["role"]) -> event types that role may add
 ALLOWED = {
-    "Preparer": {"note", "adjust", "revert", "evidence", "question", "answer"},
-    "Reviewer": {"note", "evidence", "verify", "signoff", "question", "answer"},
-    "Partner": {"note", "evidence", "verify", "signoff", "question", "answer"},
+    "Preparer": {"note", "adjust", "revert", "evidence", "question", "answer", "done"},
+    "Reviewer": {"note", "evidence", "verify", "signoff", "question", "answer", "block", "clear", "assign", "done"},
+    "Partner": {"note", "evidence", "verify", "signoff", "question", "answer", "block", "clear", "assign", "done"},
     "Client": {"answer"},  # the client answers questions put to them and does nothing else
     "Administrator": set(),
 }
@@ -39,8 +41,67 @@ def check_event(event, events=()):
         return "A question must say who it is for."
     if kind == "answer":
         return _check_answer(event, events, role)
-    if kind == "signoff" and _already_signed(event, events):
-        return "This line is already signed off at this value. It can be signed again only after the value changes."
+    if kind == "block" and not str(event.get("text", "")).strip():
+        return "A review point must say what is wrong."
+    if kind == "clear":
+        return _check_clear(event, events)
+    if kind == "assign":
+        return _check_assign(event)
+    if kind == "done":
+        return _check_done(event, events, role)
+    if kind == "signoff":
+        if open_blocks(events, event.get("claim")):
+            return "This line has open review points. Clear them before signing off."
+        if _already_signed(event, events):
+            return "This line is already signed off at this value. It can be signed again only after the value changes."
+    return None
+
+
+def open_blocks(events, claim):
+    """Review points ('block' events) on a line that no 'clear' event has closed yet."""
+    cleared = {e.get("clears") for e in events if e.get("type") == "clear"}
+    return [e for e in events if e.get("type") == "block" and e.get("claim") == claim and e.get("id") not in cleared]
+
+
+STAFF_ROLES = ("Preparer", "Reviewer", "Partner")
+
+
+def _check_assign(event):
+    """An assignment names a staff role and says what to do; the deadline is optional but must be a real date."""
+    if event.get("to") not in STAFF_ROLES:
+        return "An assignment must say which member of staff it is for."
+    if not str(event.get("text", "")).strip():
+        return "An assignment must say what needs doing."
+    due = event.get("due")
+    if due:
+        try:
+            datetime.strptime(str(due), "%Y-%m-%d")
+        except ValueError:
+            return "A deadline must be a date like 2026-10-31."
+    return None
+
+
+def _check_done(event, events, role):
+    """Only the person an assignment is for can mark it done, and only once."""
+    task = next((e for e in events if e.get("id") == event.get("closes") and e.get("type") == "assign"), None)
+    if task is None:
+        return "That does not match any assignment."
+    if task.get("to") != role:
+        return f"That assignment is for the {task.get('to')}, not the {role}."
+    if any(e.get("type") == "done" and e.get("closes") == task.get("id") for e in events):
+        return "That assignment is already done."
+    return None
+
+
+def _check_clear(event, events):
+    """A clear must close a real review point on the same line that is still open."""
+    target = next((e for e in events if e.get("id") == event.get("clears") and e.get("type") == "block"), None)
+    if target is None:
+        return "That does not match any review point."
+    if target.get("claim") != event.get("claim"):
+        return "That review point belongs to a different line."
+    if any(e.get("type") == "clear" and e.get("clears") == target.get("id") for e in events):
+        return "That review point is already cleared."
     return None
 
 
@@ -101,6 +162,10 @@ def check_view(view):
 # A question is private to the person who asked it, the person it is for, and the Partner
 # (who signs off the whole file). Everyone else only learns that a question exists.
 
+STAFF_ONLY_KINDS = ("block", "clear", "assign", "done")  # the firm's internal working notes
+STAFF_READERS = set(STAFF_ROLES)
+
+
 def _may_read_question(question, role):
     by = question.get("by") or {}
     return role in (by.get("role"), question.get("to"), "Partner")
@@ -112,6 +177,8 @@ def visible_events(events, role):
     out = []
     for e in events:
         kind = e.get("type")
+        if kind in STAFF_ONLY_KINDS and role not in STAFF_READERS:
+            continue  # review points and assignments are not for the client or the administrator
         if kind == "question" and not _may_read_question(e, role):
             out.append({"id": e.get("id"), "claim": e.get("claim"), "type": "question", "private": True, "at": e.get("at")})
         elif kind == "answer" and not (questions.get(e.get("answers")) and _may_read_question(questions[e["answers"]], role)):

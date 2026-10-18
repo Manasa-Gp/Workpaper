@@ -1,5 +1,5 @@
 """Run:  python3 backend/test_rules.py"""
-from rules import visible_events, can_read_views, can_replace_events, check_event, check_view
+from rules import open_blocks, visible_events, can_read_views, can_replace_events, check_event, check_view
 
 
 def ev(role, kind):
@@ -58,4 +58,45 @@ seen = visible_events(allv, "Reviewer")
 assert len(seen) == 1 and seen[0]["private"] and "text" not in seen[0] and "by" not in seen[0]
 assert visible_events(allv, "")[0]["private"]                                      # no role: nothing readable
 assert visible_events([ev("Preparer", "note")], "Client")[0]["type"] == "note"     # other events are untouched
+# review points (blocking notes): Reviewer/Partner raise and clear; open ones block sign-off
+def blk(id_="b1", claim="L"): return {**ev("Reviewer", "block"), "id": id_, "claim": claim, "text": "Source missing"}
+def clr(role="Reviewer", to="b1", claim="L"): return {**ev(role, "clear"), "clears": to, "claim": claim}
+def so(claim="L"): return {**ev("Reviewer", "signoff"), "claim": claim, "valueAtSignoff": 1}
+assert check_event(blk()) is None
+assert "may not" in check_event({**ev("Preparer", "block"), "text": "x"})        # the preparer cannot raise one
+assert "may not" in check_event(clr("Preparer"), [blk()])                          # ...or clear one
+assert "must say" in check_event({**ev("Reviewer", "block"), "text": "  "})
+assert "open review points" in check_event(so(), [blk()])                          # open point blocks sign-off
+assert check_event(so(), [blk(), clr()]) is None                                   # cleared: sign-off allowed
+assert "does not match" in check_event(clr(to="zz"), [blk()])
+assert "different line" in check_event(clr(claim="M"), [blk()])
+assert "already cleared" in check_event(clr(), [blk(), clr()])
+assert check_event(so("M"), [blk()]) is None                                       # another line is unaffected
+assert len(open_blocks([blk(), blk("b2")], "L")) == 2
+internal = [blk(), clr()]
+for role in ("Preparer", "Reviewer", "Partner"):
+    assert visible_events(internal, role) == internal
+for role in ("Client", "Administrator", ""):
+    assert visible_events(internal, role) == []                                    # not for the client
+# assignments and deadlines
+def asg(to="Preparer", due="2026-10-31", id_="t1", text="Find the 1099", role="Reviewer"): return {**ev(role, "assign"), "id": id_, "claim": "L", "to": to, "due": due, "text": text}
+def dn(role="Preparer", to_id="t1"): return {**ev(role, "done"), "closes": to_id, "claim": "L"}
+assert check_event(asg()) is None
+assert check_event(asg(due="")) is None                                            # a deadline is optional
+assert "may not" in check_event(asg(role="Preparer"))                              # the preparer cannot assign work
+assert "may not" in check_event(asg(role="Client"))
+assert "which member of staff" in check_event(asg(to="Client"))                    # tasks are for staff, not the client
+assert "what needs doing" in check_event(asg(text=" "))
+assert "real" not in check_event(asg(due="31/10/2026")) and "date like" in check_event(asg(due="31/10/2026"))
+assert "date like" in check_event(asg(due="2026-13-45"))
+assert check_event(dn(), [asg()]) is None                                          # the assignee closes it
+assert "is for the Preparer" in check_event(dn("Reviewer"), [asg()])               # nobody else can
+assert "already done" in check_event(dn(), [asg(), dn()])
+assert "does not match" in check_event(dn(to_id="zz"), [asg()])
+assert "may not" in check_event(dn("Client"), [asg()])
+work = [asg(), dn()]
+for role in ("Preparer", "Reviewer", "Partner"):
+    assert visible_events(work, role) == work
+for role in ("Client", "Administrator"):
+    assert visible_events(work, role) == []                                        # internal to the firm
 print("rules ok")

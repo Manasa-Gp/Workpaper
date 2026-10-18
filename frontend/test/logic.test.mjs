@@ -6,7 +6,7 @@ import { buildIndex, docLanding } from '../src/packetIndex.js';
 import { traceClaim } from '../src/trace.js';
 import { printedMatch, duplicateDoc, duplicatePage, claimChecks, worst } from '../src/checks.js';
 import { can } from '../src/roles.js';
-import { questionsFor, openQuestionCount, effectiveValue, signoffState, taxEffect, signoffBlocker } from '../src/events.js';
+import { questionsFor, openQuestionCount, effectiveValue, signoffState, taxEffect, signoffBlocker, openReviewPoints, reviewPointsFor, assignmentsFor, inboxFor } from '../src/events.js';
 
 const packet = JSON.parse(readFileSync(new URL('../../backend/data/packet.json', import.meta.url)));
 const index = buildIndex(packet);
@@ -144,6 +144,36 @@ test('questions: an answer attaches to its question, and open ones are counted',
   assert.equal(questionsFor([q, a], 'F1040.1a')[0].a.text, 'The Halvorsen one.');
   assert.equal(can('client', 'answer'), true);
   assert.equal(can('client', 'ask'), false);
+});
+
+test('an open review point blocks sign-off until it is cleared', () => {
+  const b = { id: 'b1', claim: 'F1040.1a', type: 'block', text: 'Source missing' };
+  assert.equal(openReviewPoints([b], 'F1040.1a').length, 1);
+  assert.match(signoffBlocker([], [b], 'F1040.1a'), /review point is still open/);
+  const c = { id: 'c1', claim: 'F1040.1a', type: 'clear', clears: 'b1' };
+  assert.equal(openReviewPoints([b, c], 'F1040.1a').length, 0);
+  assert.equal(signoffBlocker([], [b, c], 'F1040.1a'), null);
+  assert.equal(reviewPointsFor([b, c], 'F1040.1a')[0].c.id, 'c1');
+  assert.equal(signoffBlocker([], [b], 'F1040.1b'), null); // another line is not affected
+});
+
+test('the inbox lists what is waiting on a role, overdue first', () => {
+  const by = { name: 'X', role: 'Reviewer' };
+  const events = [
+    { id: 'q1', type: 'question', claim: 'A', to: 'Preparer', text: 'where is it?', by, at: '2026-10-01T00:00:00Z' },
+    { id: 't1', type: 'assign', claim: 'B', to: 'Preparer', due: '2026-10-20', text: 'later', by, at: '2026-10-02T00:00:00Z' },
+    { id: 't2', type: 'assign', claim: 'C', to: 'Preparer', due: '2026-10-10', text: 'late', by, at: '2026-10-03T00:00:00Z' },
+    { id: 't3', type: 'assign', claim: 'D', to: 'Preparer', due: '2026-10-05', text: 'finished', by, at: '2026-10-04T00:00:00Z' },
+    { id: 'd3', type: 'done', claim: 'D', closes: 't3', by, at: '2026-10-06T00:00:00Z' },
+    { id: 'b1', type: 'block', claim: 'E', text: 'fix', by, at: '2026-10-07T00:00:00Z' },
+    { id: 'q2', type: 'question', claim: 'F', private: true },
+  ];
+  const mine = inboxFor(events, 'Preparer', '2026-10-18');
+  assert.deepEqual(mine.map((i) => i.text), ['late', 'later', 'where is it?', 'fix']);
+  assert.equal(mine[0].overdue, true);
+  assert.equal(mine[1].overdue, false);
+  assert.deepEqual(inboxFor(events, 'Reviewer', '2026-10-18'), []); // review points are for the preparer to deal with
+  assert.equal(assignmentsFor(events, 'D')[0].d.id, 'd3');
 });
 
 test('a private question stub is not counted and has no text', () => {

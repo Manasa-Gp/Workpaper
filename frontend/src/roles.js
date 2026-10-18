@@ -4,9 +4,9 @@
 // does not have is disabled and says why. Names come from packet.firm.staff.
 
 export const ROLES = {
-  preparer: { label: 'Preparer', staffId: 'st-01', can: ['note', 'adjust', 'evidence', 'ask', 'answer'] },
-  reviewer: { label: 'Reviewer', staffId: 'st-02', can: ['note', 'evidence', 'ask', 'answer', 'verify', 'signoff', 'viewlog'] },
-  partner: { label: 'Partner', staffId: 'st-03', can: ['note', 'evidence', 'ask', 'answer', 'verify', 'signoff', 'viewlog'] },
+  preparer: { label: 'Preparer', staffId: 'st-01', can: ['note', 'adjust', 'evidence', 'ask', 'answer', 'seepoints', 'done'] },
+  reviewer: { label: 'Reviewer', staffId: 'st-02', can: ['note', 'evidence', 'ask', 'answer', 'verify', 'signoff', 'viewlog', 'block', 'clear', 'seepoints', 'assign', 'done'] },
+  partner: { label: 'Partner', staffId: 'st-03', can: ['note', 'evidence', 'ask', 'answer', 'verify', 'signoff', 'viewlog', 'block', 'clear', 'seepoints', 'assign', 'done'] },
   client: { label: 'Client', staffId: null, can: ['answer'] },
   admin: { label: 'Administrator', staffId: 'st-05', can: ['reset', 'viewlog'] },
 };
@@ -32,5 +32,9 @@ export const WHY_NOT = {
   adjust: 'Only a preparer can adjust a number.',
   verify: 'Only a reviewer or partner can verify a flagged check.',
   signoff: 'Only a reviewer or partner can sign off.',
+  block: 'Only a reviewer or partner can raise a review point.',
+  clear: 'Only a reviewer or partner can clear a review point.',
+  assign: 'Only a reviewer or partner can assign work.',
+  done: 'This task is for someone else.',
   reset: 'Only the administrator can reset saved work.',
 };

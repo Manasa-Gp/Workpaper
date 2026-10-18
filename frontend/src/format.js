@@ -24,6 +24,14 @@ export function day(iso) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+/** "2026-10-31" -> "Oct 31, 2026" (a date with no time, read as that calendar day wherever you are) */
+export function dueDay(date) {
+  if (!date) return 'no deadline';
+  const d = new Date(`${date}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return String(date);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
 /** "2026-03-04T09:12:00Z" -> "Mar 4, 2026, 9:12 AM" */
 export function dayTime(iso) {
   const d = new Date(iso);

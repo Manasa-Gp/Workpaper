@@ -9,7 +9,8 @@
 
 import { h, clear } from '../dom.js';
 import { num } from '../format.js';
-import { effectiveValue, signoffState, openQuestionCount } from '../events.js';
+import { effectiveValue, signoffState, openQuestionCount, openReviewPoints } from '../events.js';
+import { inbox } from './inbox.js';
 
 const GLYPH = { pass: '✓', warn: '!', fail: '×', na: '·' };
 const WORDS = { pass: 'checks pass', warn: 'look at this', fail: 'a check failed', na: 'calculated, no source documents' };
@@ -38,6 +39,7 @@ export function renderPicker(el, state, on) {
 
   clear(el);
   el.append(
+    inbox(state, on),
     h('div', { class: 'picker-head' },
       h('input', {
         id: 'filter', type: 'search', placeholder: 'Find a number, e.g. wages or F1040.1a', value: state.filter,
@@ -66,6 +68,7 @@ function row(line, state, on) {
   const adjusted = value !== line.value;
   const so = signoffState(line, state.events).state;
   const open = openQuestionCount(state.events, line.key);
+  const points = openReviewPoints(state.events, line.key).length;
   return h(
     'button',
     {
@@ -77,7 +80,7 @@ function row(line, state, on) {
     h('span', { class: `glyph s-${status}`, title: WORDS[status], 'aria-label': WORDS[status] }, GLYPH[status]),
     h('span', { class: 'row-text' },
       h('span', { class: 'row-label' }, line.label),
-      h('span', { class: 'row-key' }, line.key, adjusted ? ' · adjusted' : '', so === 'signed' ? ' · signed off' : so === 'reopened' ? ' · reopened' : '', open ? ` · ${open} open question${open === 1 ? '' : 's'}` : ''),
+      h('span', { class: 'row-key' }, line.key, adjusted ? ' · adjusted' : '', so === 'signed' ? ' · signed off' : so === 'reopened' ? ' · reopened' : '', open ? ` · ${open} open question${open === 1 ? '' : 's'}` : '', points ? ` · ${points} review point${points === 1 ? '' : 's'}` : ''),
     ),
     h('span', { class: 'row-value' }, typeof value === 'number' ? num(value) : String(value)),
   );

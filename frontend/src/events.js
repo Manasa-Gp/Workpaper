@@ -65,6 +65,8 @@ const MIN_NOTE = 15;
 
 export function signoffBlocker(checks, events, claim) {
   const mine = eventsFor(events, claim);
+  const open = openReviewPoints(events, claim).length;
+  if (open) return `${open} review point${open === 1 ? ' is' : 's are'} still open. Clear ${open === 1 ? 'it' : 'them'} before signing.`;
   const waiting = checks.filter((c) => c.verify && !verifiedEvent(events, claim, c.verifyKey));
   if (waiting.length) return 'A flagged check is waiting for verification. Click Mark verified first.';
   const problem = checks.find((c) => c.status === 'fail' || c.status === 'warn');
@@ -106,6 +108,57 @@ export function taxEffect(version, lineKey, delta) {
     california: delta * rate.california_per_dollar,
     estimated: true,
   };
+}
+
+/** Review points ('block' events) on a line that no 'clear' event has closed yet. They stop sign-off. */
+export function openReviewPoints(events, claim) {
+  const cleared = new Set(events.filter((e) => e.type === 'clear').map((e) => e.clears));
+  return eventsFor(events, claim).filter((e) => e.type === 'block' && !cleared.has(e.id));
+}
+
+/** Every review point on a line with the event that cleared it (or null), oldest first. */
+export function reviewPointsFor(events, claim) {
+  return eventsFor(events, claim)
+    .filter((e) => e.type === 'block')
+    .map((b) => ({ b, c: events.find((e) => e.type === 'clear' && e.clears === b.id) ?? null }));
+}
+
+/** Assignments on a line ('assign' events), each with the 'done' event that closed it (or null), oldest first. */
+export function assignmentsFor(events, claim) {
+  return eventsFor(events, claim)
+    .filter((e) => e.type === 'assign')
+    .map((a) => ({ a, d: events.find((e) => e.type === 'done' && e.closes === a.id) ?? null }));
+}
+
+/** Today as 2026-10-18 (local calendar day). Passed into inboxFor so tests can fix the date. */
+export const todayDate = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+/**
+ * "My work": everything waiting on this role, across all lines, most urgent first.
+ *   question - asked of this role and not answered yet
+ *   task     - assigned to this role and not done (overdue if its deadline is before today)
+ *   point    - an open review point (the preparer is the one who must deal with those)
+ * Private question stubs and events the server never sent simply do not appear here.
+ */
+export function inboxFor(events, roleLabel, today) {
+  const items = [];
+  const answered = new Set(events.filter((e) => e.type === 'answer').map((e) => e.answers));
+  const done = new Set(events.filter((e) => e.type === 'done').map((e) => e.closes));
+  const cleared = new Set(events.filter((e) => e.type === 'clear').map((e) => e.clears));
+  for (const e of events) {
+    if (e.type === 'question' && !e.private && e.to === roleLabel && !answered.has(e.id)) {
+      items.push({ kind: 'question', claim: e.claim, text: e.text, from: e.by.name, at: e.at, due: null, overdue: false });
+    } else if (e.type === 'assign' && e.to === roleLabel && !done.has(e.id)) {
+      items.push({ kind: 'task', claim: e.claim, text: e.text, from: e.by.name, at: e.at, due: e.due || null, overdue: Boolean(e.due) && e.due < today });
+    } else if (e.type === 'block' && roleLabel === 'Preparer' && !cleared.has(e.id)) {
+      items.push({ kind: 'point', claim: e.claim, text: e.text, from: e.by.name, at: e.at, due: null, overdue: false });
+    }
+  }
+  const rank = (i) => (i.overdue ? 0 : i.due ? 1 : 2);
+  return items.sort((a, b) => rank(a) - rank(b) || (a.due ?? '9').localeCompare(b.due ?? '9') || a.at.localeCompare(b.at));
 }
 
 /** The questions on a line, each with its answer (or null), oldest first. */

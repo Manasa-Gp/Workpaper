@@ -17,8 +17,8 @@
 import { h, clear } from '../dom.js';
 import { traceClaim } from '../trace.js';
 import { claimChecks, worst } from '../checks.js';
-import { num, signed, dayTime } from '../format.js';
-import { effectiveValue, questionsFor, eventsFor, verifiedEvent, signoffBlocker, signoffState, taxEffect, newEvent } from '../events.js';
+import { num, signed, dayTime, dueDay } from '../format.js';
+import { effectiveValue, questionsFor, reviewPointsFor, assignmentsFor, eventsFor, verifiedEvent, signoffBlocker, signoffState, taxEffect, newEvent } from '../events.js';
 import { actor, can, WHY_NOT } from '../roles.js';
 
 const LABEL = { pass: 'Pass', warn: 'Look at this', fail: 'Failed', na: 'Not applicable' };
@@ -82,6 +82,8 @@ export function renderClaim(el, state, on) {
 
     safe('Who has looked at this', () => viewLog(state)),
 
+    safe('Review points', () => reviewPoints(state, line, on)),
+    safe('Assignments', () => assignments(state, line, on)),
     safe('Questions', () => questions(state, line, on)),
 
     section('Notes, changes and sign-off',
@@ -94,6 +96,76 @@ export function renderClaim(el, state, on) {
 // ---------- pieces ----------
 
 const ASK_TO = ['Client', 'Preparer', 'Reviewer', 'Partner'];
+
+/** Review points: a Reviewer or Partner stops a line from being signed until it is dealt with. */
+function reviewPoints(state, line, on) {
+  if (!can(state.role, 'seepoints')) return ''; // internal to the firm: the client and administrator never see the section
+  const who = actor(state.index.packet, state.role);
+  const pairs = reviewPointsFor(state.events, line.key);
+  const canRaise = can(state.role, 'block');
+  const clearButton = (b) => h('button', {
+    type: 'button', class: 'btn',
+    onClick: () => on.add(newEvent({ claim: line.key, type: 'clear', clears: b.id, by: { name: who.name, role: who.role }, text: 'Dealt with.' })),
+  }, 'Clear');
+  const text = h('input', { id: 'block-text', type: 'text', placeholder: 'What must be fixed before sign-off?', 'aria-label': 'Review point' });
+  const raise = h('button', {
+    type: 'button', class: 'btn',
+    onClick: () => {
+      const t = text.value.trim();
+      if (!t) return;
+      on.add(newEvent({ claim: line.key, type: 'block', by: { name: who.name, role: who.role }, text: t }));
+    },
+  }, 'Raise review point');
+  return section('Review points',
+    pairs.length
+      ? h('ul', { class: 'question-list' }, pairs.map(({ b, c }) => h('li', {},
+          h('p', {}, h('strong', {}, b.text)),
+          h('p', { class: 'muted' }, `Raised by ${b.by.name} (${b.by.role}) · ${dayTime(b.at)}`),
+          c
+            ? h('p', { class: 'muted' }, `✓ Cleared by ${c.by.name} (${c.by.role}) · ${dayTime(c.at)}`)
+            : [h('p', { class: 'tag' }, 'Open: blocks sign-off'), canRaise ? clearButton(b) : h('p', { class: 'muted' }, 'Reply with a note; a reviewer or partner clears it.')],
+        )))
+      : h('p', { class: 'muted' }, 'No review points on this number.'),
+    canRaise ? h('div', { class: 'row2' }, text, raise) : null,
+  );
+}
+
+/** Assignments: a Reviewer or Partner hands a task on this number to someone, with an optional deadline. */
+const STAFF = ['Preparer', 'Reviewer', 'Partner'];
+
+function assignments(state, line, on) {
+  if (!can(state.role, 'seepoints')) return ''; // internal to the firm, like review points
+  const who = actor(state.index.packet, state.role);
+  const pairs = assignmentsFor(state.events, line.key);
+  const to = h('select', { id: 'assign-to', 'aria-label': 'Who the task is for' }, STAFF.map((r) => h('option', { value: r }, `For the ${r}`)));
+  const due = h('input', { id: 'assign-due', type: 'date', 'aria-label': 'Deadline (optional)' });
+  const text = h('input', { id: 'assign-text', type: 'text', placeholder: 'What needs doing?', 'aria-label': 'Task' });
+  const add = h('button', {
+    type: 'button', class: 'btn',
+    onClick: () => {
+      const t = text.value.trim();
+      if (!t) return;
+      on.add(newEvent({ claim: line.key, type: 'assign', by: { name: who.name, role: who.role }, to: to.value, due: due.value || null, text: t }));
+    },
+  }, 'Assign');
+  const doneButton = (a) => h('button', {
+    type: 'button', class: 'btn',
+    onClick: () => on.add(newEvent({ claim: line.key, type: 'done', closes: a.id, by: { name: who.name, role: who.role }, text: 'Done.' })),
+  }, 'Mark done');
+  return section('Assignments',
+    pairs.length
+      ? h('ul', { class: 'question-list' }, pairs.map(({ a, d }) => h('li', {},
+          h('p', {}, h('strong', {}, a.text)),
+          h('p', { class: 'muted' }, `For the ${a.to} · due ${dueDay(a.due)} · assigned by ${a.by.name} (${a.by.role})`),
+          d
+            ? h('p', { class: 'muted' }, `✓ Done by ${d.by.name} (${d.by.role}) · ${dayTime(d.at)}`)
+            : [h('p', { class: 'tag' }, 'Open'), who.role === a.to ? doneButton(a) : h('p', { class: 'muted' }, `Waiting for the ${a.to}.`)],
+        )))
+      : h('p', { class: 'muted' }, 'No assignments on this number.'),
+    can(state.role, 'assign') ? h('div', { class: 'row2' }, to, due) : null,
+    can(state.role, 'assign') ? h('div', { class: 'row2' }, text, add) : null,
+  );
+}
 
 /** Questions put to the client or a colleague. An answer attaches to its question and counts as evidence. */
 function questions(state, line, on) {
@@ -409,7 +481,7 @@ function history(events) {
   if (!events.length) return h('p', { class: 'muted' }, 'Nothing recorded on this number yet.');
   return h('ol', { class: 'history' },
     [...events].reverse().map((e) => {
-      const what = { note: 'Note', adjust: 'Adjusted', signoff: 'Signed off', revert: 'Reverted', verify: 'Verified', evidence: 'Evidence added', question: 'Question', answer: 'Answer' }[e.type];
+      const what = { note: 'Note', adjust: 'Adjusted', signoff: 'Signed off', revert: 'Reverted', verify: 'Verified', evidence: 'Evidence added', question: 'Question', answer: 'Answer', block: 'Review point', clear: 'Review point cleared', assign: 'Assigned', done: 'Task done' }[e.type];
       return h('li', {},
         h('p', { class: 'hist-head' }, h('strong', {}, what), ` · ${e.by.name} (${e.by.role}) · ${dayTime(e.at)}`),
         e.type === 'adjust' || e.type === 'revert' ? h('p', {}, `${num(e.from)} → ${num(e.to)}`) : null,

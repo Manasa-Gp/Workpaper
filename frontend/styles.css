@@ -237,3 +237,11 @@ details.passed[open] > summary { margin-bottom: 8px; }
 .question-list li { margin-bottom: 12px; }
 .question-list p { margin: 0 0 2px; }
 .answer { margin-top: 4px; padding-left: 10px; border-left: 3px solid var(--line, #ddd); }
+
+/* ---------- my work (inbox) ---------- */
+.inbox { border-bottom: 1px solid var(--line); padding: 8px 12px; }
+.inbox > summary { cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.inbox-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; max-height: 220px; overflow: auto; }
+.inbox-list li { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); }
+.inbox-list p { margin: 2px 0; }
+.overdue { color: var(--fail); font-weight: 600; }
