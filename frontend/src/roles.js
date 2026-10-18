@@ -4,9 +4,9 @@
 // does not have is disabled and says why. Names come from packet.firm.staff.
 
 export const ROLES = {
-  preparer: { label: 'Preparer', staffId: 'st-01', can: ['note', 'adjust'] },
-  reviewer: { label: 'Reviewer', staffId: 'st-02', can: ['note', 'verify', 'signoff'] },
-  partner: { label: 'Partner', staffId: 'st-03', can: ['note', 'verify', 'signoff'] },
+  preparer: { label: 'Preparer', staffId: 'st-01', can: ['note', 'adjust', 'evidence'] },
+  reviewer: { label: 'Reviewer', staffId: 'st-02', can: ['note', 'evidence', 'verify', 'signoff'] },
+  partner: { label: 'Partner', staffId: 'st-03', can: ['note', 'evidence', 'verify', 'signoff'] },
   client: { label: 'Client', staffId: null, can: [] },
   admin: { label: 'Administrator', staffId: 'st-05', can: ['reset'] },
 };
@@ -26,6 +26,7 @@ export const can = (roleKey, action) => ROLES[roleKey].can.includes(action);
 
 export const WHY_NOT = {
   note: 'Your role cannot add notes.',
+  evidence: 'Only the firm’s staff can add evidence.',
   adjust: 'Only a preparer can adjust a number.',
   verify: 'Only a reviewer or partner can verify a flagged check.',
   signoff: 'Only a reviewer or partner can sign off.',

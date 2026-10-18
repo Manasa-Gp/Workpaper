@@ -22,7 +22,26 @@ export function traceClaim(index, key) {
   const inputs = (line.inputs ?? []).map((k) => index.current.byKey.get(k)).filter(Boolean);
   const feeds = (index.current.feeds.get(key) ?? []).map((k) => index.current.byKey.get(k)).filter(Boolean);
   const sources = (line.sources ?? []).map((ref) => resolveSource(index, ref));
-  return { line, inputs, feeds, sources };
+  return { line, inputs, feeds, sources, lastYear: lastYear(index, key), sharedWith: sharedWith(index, key) };
+}
+
+/** Last year's number for the same line key, or null. Last year's lines are a plain map: key -> value. */
+export function lastYear(index, key) {
+  const old = index.packet.prior_years?.return_2024;
+  const value = old?.lines?.[key];
+  if (value === undefined) return null;
+  return { value, label: old.line_labels?.[key] ?? null };
+}
+
+/** Other lines that cite at least one of the same evidence items (documents, answers, messages). */
+export function sharedWith(index, key) {
+  const line = index.current.byKey.get(key);
+  const mine = new Set((line?.sources ?? []).filter((r) => !r.startsWith('ref:')));
+  if (!mine.size) return [];
+  return index.current.lines
+    .filter((other) => other.key !== key)
+    .map((other) => ({ line: other, refs: (other.sources ?? []).filter((r) => mine.has(r)) }))
+    .filter((hit) => hit.refs.length);
 }
 
 export function resolveSource(index, ref) {

@@ -11,6 +11,7 @@
 //   3. Where it came from   every source (clickable, opens views/source.js)
 //   4. Checks               what was compared and the result
 //   5. What uses it         lines that depend on this one
+//   5b. Related             last year's value, and lines that share evidence
 //   6. Notes, changes, sign-off   actions (role-enforced) and the history
 
 import { h, clear } from '../dom.js';
@@ -65,6 +66,7 @@ export function renderClaim(el, state, on) {
       trace.sources.length
         ? h('ul', { class: 'sources' }, trace.sources.map((s) => sourceRow(s, state, on)))
         : h('p', { class: 'muted' }, 'This line is calculated from other lines. It has no source documents of its own.'),
+      addedEvidence(notes, state, line, on),
     ),
 
     section('Checks',
@@ -76,6 +78,8 @@ export function renderClaim(el, state, on) {
       ? section('What uses it', h('ul', { class: 'links' }, trace.feeds.map((l) => linkRow(l, state, on))))
       : '', // el.append(null) would print the word "null"
 
+    related(trace, state, on),
+
     section('Notes, changes and sign-off',
       actions(state, line, value, checks, on),
       history(notes),
@@ -84,6 +88,65 @@ export function renderClaim(el, state, on) {
 }
 
 // ---------- pieces ----------
+
+/** Evidence a person added after the fact (an email, a call, a file). Saved as an 'evidence' event, never into the packet. */
+function addedEvidence(notes, state, line, on) {
+  const added = notes.filter((e) => e.type === 'evidence');
+  const who = actor(state.index.packet, state.role);
+  const what = h('input', { id: 'evidence-what', type: 'text', placeholder: 'What is it? (required)', 'aria-label': 'What the evidence is' });
+  const where = h('input', { id: 'evidence-where', type: 'text', placeholder: 'Where to find it (optional)', 'aria-label': 'Where to find the evidence' });
+  const file = h('input', { id: 'evidence-file', type: 'file', 'aria-label': 'Attach a file (optional)' });
+  const message = h('p', { class: 'muted', id: 'evidence-msg' });
+  const add = h('button', {
+    type: 'button', class: 'btn',
+    onClick: () => {
+      const text = what.value.trim();
+      if (!text) { message.textContent = 'Say what the evidence is.'; return; }
+      const picked = file.files?.[0];
+      on.add(newEvent({
+        claim: line.key, type: 'evidence', by: { name: who.name, role: who.role }, text,
+        where: where.value.trim() || null,
+        file: picked ? { name: picked.name, size: picked.size } : null, // the name only: the file itself is not stored
+      }));
+    },
+  }, 'Add evidence');
+  if (!can(state.role, 'evidence')) {
+    add.setAttribute('disabled', '');
+    add.setAttribute('title', WHY_NOT.evidence);
+  }
+  return h('div', { class: 'added-evidence' },
+    h('h3', {}, 'Added by the team'),
+    added.length
+      ? h('ul', { class: 'added-list' }, added.map((e) => h('li', {},
+          h('p', {}, h('strong', {}, e.text)),
+          e.where ? h('p', { class: 'muted' }, `Where: ${e.where}`) : null,
+          e.file ? h('p', { class: 'muted' }, `File: ${e.file.name} (${Math.max(1, Math.round(e.file.size / 1024))} KB). Only the name is recorded, not the file.`) : null,
+          h('p', { class: 'muted' }, `Added by ${e.by.name} (${e.by.role}) · ${dayTime(e.at)}`),
+        )))
+      : h('p', { class: 'muted' }, 'Nothing added yet.'),
+    h('div', { class: 'row2' }, what, where),
+    file, message, h('div', { class: 'btns' }, add),
+  );
+}
+
+/** Last year's number for this line, and other lines built on the same evidence. Hidden when there is neither. */
+function related(trace, state, on) {
+  const { lastYear, sharedWith } = trace;
+  if (!lastYear && !sharedWith.length) return '';
+  const shown = sharedWith.slice(0, 8);
+  return section('Related',
+    lastYear
+      ? h('p', { class: 'rule' }, 'Last year (2024) this line was ', h('strong', {}, num(lastYear.value)),
+          typeof trace.line.value === 'number' ? ` — ${signed(trace.line.value - lastYear.value)} this year.` : '.')
+      : null,
+    shown.length
+      ? h('div', {},
+          h('p', { class: 'muted' }, 'Other lines that use the same evidence:'),
+          h('ul', { class: 'links' }, shown.map((hit) => linkRow(hit.line, state, on))),
+          sharedWith.length > shown.length ? h('p', { class: 'muted' }, `and ${sharedWith.length - shown.length} more.`) : null)
+      : null,
+  );
+}
 
 const section = (title, ...children) => h('section', { class: 'block' }, h('h2', {}, title), children);
 const pill = (status, text) => h('span', { class: `pill p-${status}` }, h('span', { 'aria-hidden': 'true' }, GLYPH[status]), ` ${text}`);
@@ -263,7 +326,7 @@ function history(events) {
   if (!events.length) return h('p', { class: 'muted' }, 'Nothing recorded on this number yet.');
   return h('ol', { class: 'history' },
     [...events].reverse().map((e) => {
-      const what = { note: 'Note', adjust: 'Adjusted', signoff: 'Signed off', revert: 'Reverted', verify: 'Verified' }[e.type];
+      const what = { note: 'Note', adjust: 'Adjusted', signoff: 'Signed off', revert: 'Reverted', verify: 'Verified', evidence: 'Evidence added' }[e.type];
       return h('li', {},
         h('p', { class: 'hist-head' }, h('strong', {}, what), ` · ${e.by.name} (${e.by.role}) · ${dayTime(e.at)}`),
         e.type === 'adjust' || e.type === 'revert' ? h('p', {}, `${num(e.from)} → ${num(e.to)}`) : null,

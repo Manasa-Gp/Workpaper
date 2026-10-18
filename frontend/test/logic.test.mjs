@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { buildIndex, docLanding } from '../src/packetIndex.js';
 import { traceClaim } from '../src/trace.js';
 import { printedMatch, duplicateDoc, duplicatePage, claimChecks, worst } from '../src/checks.js';
+import { can } from '../src/roles.js';
 import { effectiveValue, signoffState, taxEffect, signoffBlocker } from '../src/events.js';
 
 const packet = JSON.parse(readFileSync(new URL('../../backend/data/packet.json', import.meta.url)));
@@ -116,6 +117,23 @@ test('an adjusted value that no longer matches its sources gets its own warning,
   assert.equal(row.status, 'warn');
   assert.match(row.detail, /no longer matches its sources/);
   assert.match(signoffBlocker(adjusted, [{ claim: 'F1040.1a', type: 'verify', check: 'dupdoc:D09:D10', by: { name: 'T', role: 'R' } }], 'F1040.1a'), /warning/);
+});
+
+test('related: last years value for the same line, and lines sharing evidence', () => {
+  const t = traceClaim(index, 'F1040.1a');
+  assert.equal(t.lastYear.value, 156039);
+  const withShared = index.current.lines.find((l) => traceClaim(index, l.key).sharedWith.length);
+  if (withShared) {
+    const hit = traceClaim(index, withShared.key).sharedWith[0];
+    // sharing is mutual: the other line must list this one back
+    assert.ok(traceClaim(index, hit.line.key).sharedWith.some((x) => x.line.key === withShared.key));
+  }
+  assert.equal(traceClaim(index, 'SchC.44a').lastYear === null || typeof traceClaim(index, 'SchC.44a').lastYear.value === 'number', true);
+});
+
+test('evidence: staff can add it, the client and administrator cannot', () => {
+  for (const r of ['preparer', 'reviewer', 'partner']) assert.equal(can(r, 'evidence'), true);
+  for (const r of ['client', 'admin']) assert.equal(can(r, 'evidence'), false);
 });
 
 test('nothing in frontend/src draws text with innerHTML or similar', () => {

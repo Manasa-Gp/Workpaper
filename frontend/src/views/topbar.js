@@ -21,7 +21,7 @@ export function renderTopbar(el, state, on) {
     }),
   );
 
-  const doing = Object.entries({ note: 'add notes', adjust: 'adjust numbers', verify: 'verify flagged checks', signoff: 'sign off' })
+  const doing = Object.entries({ note: 'add notes', evidence: 'add evidence', adjust: 'adjust numbers', verify: 'verify flagged checks', signoff: 'sign off' })
     .filter(([action]) => can(state.role, action))
     .map(([, text]) => text);
   const summary = state.role === 'admin' ? 'can reset saved work' : doing.length ? `can ${doing.join(', ')}` : 'can view only';
