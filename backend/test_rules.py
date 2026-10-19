@@ -240,3 +240,12 @@ assert "waiting for verification" in check_event(so_for(_verify_key), [])
 assert "waiting for verification" not in str(check_event(so_for(_verify_key), [{**ev("Reviewer", "verify"), "claim": _verify_key, "check": next(c["verifyKey"] for c in C.claim_checks(_idx, C.trace_claim(_idx, _verify_key)) if c.get("verify"))}]))
 assert check_event(so_for("X"), []) is None                                                       # not a line of the return: nothing to check
 print("server checks ok")
+
+# GET /api/checks helper: same ranking as the screen (fail > warn > pass > na)
+from checks import worst, all_checks
+assert worst([{"status": "na"}, {"status": "pass"}]) == "pass"
+assert worst([{"status": "pass"}, {"status": "warn"}, {"status": "fail"}]) == "fail"
+assert worst([]) == "na"
+_all = all_checks([])
+assert _all and len(_all["claims"]) > 600 and len(_all["cross"]) == 14
+print("api checks ok")

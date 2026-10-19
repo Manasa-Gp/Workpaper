@@ -621,3 +621,30 @@ def signoff_check_problem(events, claim):
         what = "A check failed" if problem["status"] == "fail" else "A check shows a warning"
         return f"{what}. Add a note explaining it (at least {MIN_NOTE} characters) before signing."
     return None
+
+
+# ---------- everything at once, for GET /api/checks ----------
+
+_ORDER = ["fail", "warn", "pass", "na"]
+
+
+def worst(checks):
+    """The most serious status in a list: fail, then warn, then pass, then na (same order as the screen)."""
+    for status in _ORDER:
+        if any(c["status"] == status for c in checks):
+            return status
+    return "na"
+
+
+def all_checks(events):
+    """Every claim's checks (using its current adjusted value) plus the cross-checks, ready to send as JSON.
+    `events` are the ones that still count (undone batches already removed)."""
+    index = load_index()
+    if index is None:
+        return None
+    claims = {}
+    for line in index.current["lines"]:
+        trace = trace_claim(index, line["key"])
+        checks = claim_checks(index, trace, effective_value(line, events))
+        claims[line["key"]] = {"worst": worst(checks), "checks": checks}
+    return {"claims": claims, "cross": cross_checks(index)}

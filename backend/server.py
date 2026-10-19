@@ -4,6 +4,7 @@ Run:  python3 backend/server.py        then open http://localhost:3000
 
 What it does
   GET  /api/packet   sends backend/data/packet.json exactly as it is on disk (never modified)
+  GET  /api/checks   every claim's checks and the cross-checks, worked out by the server (checks.py)
   GET  /api/events   sends the saved notes / adjustments / sign-offs (backend/data/events.json), minus questions the role may not read (?role=...)
   POST /api/events   adds one event, after rules.py says that role may add that kind (else 403)
   POST /api/views    records that someone opened a line or an evidence item (server adds the time)
@@ -26,7 +27,8 @@ import time
 
 from datetime import datetime, timezone
 
-from rules import can_read_views, can_replace_events, check_event, check_view, visible_events
+from checks import all_checks
+from rules import can_read_views, can_replace_events, check_event, check_view, undone_batches, visible_events
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
@@ -76,6 +78,14 @@ class Handler(BaseHTTPRequestHandler):
             role = (parse_qs(urlparse(self.path).query).get("role") or [""])[0]
             events = json.loads(EVENTS.read_text(encoding="utf-8")) if EVENTS.exists() else []
             return self.send_json(200, visible_events(events, role))  # private questions are hidden from other roles
+        if path == "/api/checks":
+            events = json.loads(EVENTS.read_text(encoding="utf-8")) if EVENTS.exists() else []
+            gone = undone_batches(events)
+            counting = [e for e in events if e.get("type") == "undo" or e.get("batch") not in gone]
+            result = all_checks(counting)
+            if result is None:
+                return self.send_json(404, {"error": "Put packet.json in backend/data/"})
+            return self.send_json(200, result)
         if path == "/api/views":
             query = parse_qs(urlparse(self.path).query)
             role = (query.get("role") or [""])[0]
