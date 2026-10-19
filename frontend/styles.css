@@ -305,3 +305,15 @@ dl.record dl.record { margin: 0; padding-left: 8px; border-left: 2px solid var(-
 .carry { width: 100%; border-collapse: collapse; margin: 4px 0 12px; font-variant-numeric: tabular-nums; }
 .carry th, .carry td { text-align: left; padding: 2px 6px; border-bottom: 1px solid var(--line); }
 .carry th:nth-child(n+2), .carry td:nth-child(n+2) { text-align: right; }
+
+/* Firm standards (views/standards.js) and the counts bar (views/statuscounts.js). */
+.standards { border-bottom: 1px solid var(--line); padding: 8px 12px; }
+.standards > summary { cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.std-list, .std-flags { margin: 4px 0 8px; padding-left: 18px; }
+.std-flags { list-style: none; padding-left: 0; }
+.std-flags li { margin: 4px 0; }
+.status-counts { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: 0.85em; }
+.count-chip { padding: 2px 8px; border: 1px solid var(--line); border-radius: 99px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.count-chip.s-warn { border-color: var(--warn); }
+.count-chip.s-fail { border-color: var(--fail); }
+.count-chip.s-pass { border-color: var(--pass); }

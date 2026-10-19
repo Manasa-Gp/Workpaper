@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "start": "python3 backend/server.py",
-    "test": "node frontend/test/logic.test.mjs"
+    "test": "node frontend/test/logic.test.mjs",
+    "dev": "npx --yes nodemon --watch backend --ext py --exec \"python3 backend/server.py\""
   }
 }
