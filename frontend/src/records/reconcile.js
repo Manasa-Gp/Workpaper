@@ -1,13 +1,13 @@
 // records/reconcile.js — Cal1 (figures that should agree) and Cal4 (income split between states).
 
 import { context, link } from './core.js';
-import { crossChecks, incomeByCategory } from '../crosschecks.js';
+import { crossFor, incomeFor } from '../serverchecks.js';
 
 const WORD = { pass: 'Agree', fail: 'Do not agree' };
 const days = (from, to) => Math.round((new Date(`${to}T12:00:00`) - new Date(`${from}T12:00:00`)) / 86400000) + 1;
 
 export function reconciliations(state) {
-  const list = crossChecks(state.index).filter((c) => c.group === 'reconcile');
+  const list = crossFor(state).filter((c) => c.group === 'reconcile');
   const bad = list.filter((c) => c.status === 'fail').length;
   return {
     intro: `Figures that should be the same in two places. ${bad} of ${list.length} do not agree. Each row is also a check on the lines it is about.`,
@@ -21,11 +21,11 @@ export function reconciliations(state) {
 
 export function incomeSplit(state) {
   const ctx = context(state);
-  const rows = incomeByCategory(state.index);
+  const rows = incomeFor(state);
   const periods = ctx.packet.household.residency ?? [];
   const move = periods.find((p) => p.state !== 'CA');
   const sum = (col) => Math.round(rows.reduce((n, r) => n + r[col], 0) * 100) / 100;
-  const checks = crossChecks(state.index).filter((c) => c.group === 'state');
+  const checks = crossFor(state).filter((c) => c.group === 'state');
   const outside = rows.reduce((n, r) => n + r.outside, 0);
   return {
     intro: `The household moved from California to ${move?.state ?? 'another state'}${move ? ` on ${move.from}` : ''}. California taxes what was earned while living there and California-source income afterwards. The rest is outside California${move ? ` (${move.state} has no state income tax)` : ''}. Each column below must add up to the total on the form.`,

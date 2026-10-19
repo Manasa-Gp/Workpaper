@@ -561,7 +561,10 @@ def income_by_category(index):
         d, e = index.by_key.get(f"SchCA540NR.{m.group(1)}.D"), index.by_key.get(f"SchCA540NR.{m.group(1)}.E")
         if not d or not e:
             continue
-        rows.append({"n": m.group(1), "label": re.sub(r" - federal$", "", line["label"]), "A": line["value"], "D": d["value"], "E": e["value"]})
+        n = m.group(1)
+        rows.append({"n": n, "label": re.sub(r" - federal$", "", line["label"]),
+                     "keys": {"A": line["key"], "D": d["key"], "E": e["key"]},
+                     "A": line["value"], "D": d["value"], "E": e["value"], "outside": round2(d["value"] - e["value"])})
     return rows
 
 
@@ -646,5 +649,5 @@ def all_checks(events):
     for line in index.current["lines"]:
         trace = trace_claim(index, line["key"])
         checks = claim_checks(index, trace, effective_value(line, events))
-        claims[line["key"]] = {"worst": worst(checks), "checks": checks}
-    return {"claims": claims, "cross": cross_checks(index)}
+        claims[line["key"]] = {"worst": worst(checks), "value": effective_value(line, events), "checks": checks}
+    return {"claims": claims, "cross": cross_checks(index), "income": income_by_category(index)}

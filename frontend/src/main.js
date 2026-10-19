@@ -21,7 +21,8 @@
 import { loadFromBackend, readPacketFile } from './loadPacket.js';
 import { buildIndex } from './packetIndex.js';
 import { traceClaim } from './trace.js';
-import { claimChecks, worst } from './checks.js';
+import { worst } from './checks.js';
+import { checksFor, loadChecks } from './serverchecks.js';
 import { loadEvents, saveEvents, appendEvent, verifiedEvent, effectiveValue } from './events.js';
 import { recordView, loadViews, loadAllViews } from './viewlog.js';
 import { actor, can } from './roles.js';
@@ -36,6 +37,7 @@ import { h, clear } from './dom.js';
 
 const state = {
   index: null,
+  serverChecks: null, // the server's answer from GET /api/checks (see serverchecks.js)
   role: 'preparer',
   since: readSince('preparer'), // Ch1: when this role last looked (this browser only)
   onlyNew: false,
@@ -191,11 +193,12 @@ async function start(packet) {
 }
 
 /** One status per line, from the checks in checks.js. Lines with no source documents are 'na'. */
-function computeStatuses(index, events) {
+function computeStatuses(state) {
+  const { index, events } = state;
   const statuses = new Map();
   for (const line of index.current.lines) {
     if (!line.sources?.length) { statuses.set(line.key, 'na'); continue; }
-    const checks = claimChecks(index, traceClaim(index, line.key), effectiveValue(line, events));
+    const checks = checksFor(state, traceClaim(index, line.key), effectiveValue(line, events));
     const waiting = checks.some((c) => c.verify && !verifiedEvent(events, line.key, c.verifyKey));
     const status = worst(checks);
     // A line is only 'pass' once every flagged check has been confirmed by a person.
@@ -259,7 +262,7 @@ function setKey(key) {
   state.record = null;
   const trace = traceClaim(state.index, key);
   // Open on the problem if there is one: the first source whose check failed or warned.
-  const flagged = claimChecks(state.index, trace).find((c) => c.ref && (c.status === 'fail' || c.status === 'warn'));
+  const flagged = checksFor(state, trace, effectiveValue(trace.line, state.events)).find((c) => c.ref && (c.status === 'fail' || c.status === 'warn'));
   const first = trace.sources.find((s) => s.kind === 'value') ?? trace.sources[0];
   state.sourceRef = flagged ? flagged.ref : first ? first.ref : null;
   trackView(key, 'line');
@@ -332,13 +335,24 @@ function restoreDrafts(scope) {
   }
 }
 
+// Ask the server for fresh checks whenever the saved events have changed since the last answer.
+let checkedFor = null; let fetchingChecks = false;
+function ensureChecks() {
+  if (!state.index || fetchingChecks || state.unsaved.length || checkedFor === state.events) return;
+  fetchingChecks = true;
+  const asked = state.events;
+  loadChecks().then((r) => { state.serverChecks = r; }, () => { state.serverChecks = null; })
+    .finally(() => { fetchingChecks = false; checkedFor = asked; render(); });
+}
+
 function render({ scrollToMark = false } = {}) {
   if (!state.index) return;
+  ensureChecks();
   const scope = `${state.key}|${state.role}`;
   if (draftScope) saveDrafts(draftScope); // the boxes still on screen belong to the line and role we are leaving
   draftScope = scope;
   renderBanner();
-  state.statusByKey = computeStatuses(state.index, state.events); // events can change a status (verification)
+  state.statusByKey = computeStatuses(state); // events can change a status (verification)
   // Keep the search box focused and the list scrolled while redrawing.
   const active = document.activeElement;
   const keepFocus = active && active.id && ['filter'].includes(active.id) ? { id: active.id, at: active.selectionStart } : null;

@@ -4,7 +4,7 @@
 // the server then stops sending those events, so the file keeps the history but the screen no longer shows them.
 // A what-if is never an event at all: it lives in state.tryIt (memory) and disappears on reload.
 
-import { claimChecks } from './checks.js';
+import { checksFor } from './serverchecks.js';
 import { traceClaim } from './trace.js';
 import { effectiveValue, newEvent, taxEffect, verifiedEvent, RETURN_KEY } from './events.js';
 
@@ -24,7 +24,7 @@ export function buildBatch(state, kind, text, who) {
     const trace = traceClaim(state.index, key);
     const line = trace?.line;
     if (!line) { skipped += 1; continue; }
-    const waiting = claimChecks(state.index, trace, effectiveValue(line, state.events))
+    const waiting = checksFor(state, trace, effectiveValue(line, state.events))
       .filter((c) => c.verify && !verifiedEvent(state.events, key, c.verifyKey));
     if (!waiting.length) { skipped += 1; continue; }
     for (const c of waiting) events.push(newEvent({ claim: key, type: 'verify', batch: id, check: c.verifyKey, by, text: 'Confirmed the copy is counted once.' }));

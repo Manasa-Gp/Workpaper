@@ -17,7 +17,8 @@
 import { h, clear } from '../dom.js';
 import { traceClaim } from '../trace.js';
 import { rejectionsForLine, maskSsn } from '../filing.js';
-import { claimChecks, worst } from '../checks.js';
+import { worst } from '../checks.js';
+import { checksFor } from '../serverchecks.js';
 import { num, signed, dayTime, dueDay } from '../format.js';
 import { EVENT_LABEL, filedEvent, filedValue, effectiveValue, questionsFor, reviewPointsFor, assignmentsFor, eventsFor, verifiedEvent, signoffBlocker, signoffState, taxEffect, newEvent, needsPartner, PARTNER_OVER, DECISION_LABEL } from '../events.js';
 import { actor, can, WHY_NOT } from '../roles.js';
@@ -36,7 +37,7 @@ export function renderClaim(el, state, on) {
   }
   const { line } = trace;
   const value = effectiveValue(line, state.events);
-  const checks = claimChecks(state.index, trace, value); // value = the number now on screen, adjusted or not
+  const checks = checksFor(state, trace, value); // value = the number now on screen, adjusted or not
   const waiting = checks.filter((c) => c.verify && !verifiedBy(c, state, line)).length;
   // "pass" is only true once every check that asks for a person's confirmation has it.
   const status = worst(checks) === 'pass' && waiting ? 'warn' : worst(checks);

@@ -1,12 +1,12 @@
 // records/crosschecks.js — every cross-check in one table (the same ones that show on each claim).
 
 import { link } from './core.js';
-import { crossChecks } from '../crosschecks.js';
+import { crossFor } from '../serverchecks.js';
 
 const WORD = { pass: 'Agree', fail: 'Do not agree' };
 
 export function crossCheckList(state) {
-  const list = crossChecks(state.index);
+  const list = crossFor(state);
   const failing = list.filter((c) => c.status === 'fail').length;
   return {
     intro: `Figures the client gave, set against what an agency or a document says. ${failing} of ${list.length} do not agree. Each failing row is also a check on the line it is about.`,
