@@ -330,3 +330,16 @@ dl.record dl.record { margin: 0; padding-left: 8px; border-left: 2px solid var(-
 .time-form { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
 .time-form input { width: 6em; }
 .time-recent { margin: 4px 0; padding-left: 18px; }
+
+/* Records (views/records.js): the panel in the left column and the tables in the middle column. */
+.records-panel { border-bottom: 1px solid var(--line); padding: 8px 12px; }
+.records-panel > summary { cursor: pointer; font-weight: 600; }
+.records-list { list-style: none; margin: 2px 0 8px; padding: 0; }
+.records-list li { margin: 3px 0; }
+.records-list .is-open { font-weight: 600; }
+.rec-scroll { overflow-x: auto; }
+.rec { border-collapse: collapse; width: 100%; font-size: 0.9em; }
+.rec th, .rec td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.rec th { white-space: nowrap; color: var(--muted, inherit); font-weight: 600; }
+.rec .rec-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.record-block h2 { font-size: 1em; }

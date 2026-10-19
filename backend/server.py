@@ -22,6 +22,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 import threading
+import time
 
 from datetime import datetime, timezone
 
@@ -37,6 +38,13 @@ PORT = int(os.environ.get("PORT", 3000))
 HOST = os.environ.get("HOST", "127.0.0.1")  # on a host, set HOST=0.0.0.0 so outside visitors can connect
 MAX_BODY = 5_000_000
 LOCK = threading.Lock()
+STARTED = time.time()  # changes every time the server restarts
+
+
+def frontend_version():
+    """Changes when any frontend file is saved or the server restarts. The page polls it to reload itself while you develop."""
+    newest = max((f.stat().st_mtime for f in FRONTEND.rglob("*") if f.is_file()), default=0)
+    return f"{newest:.3f}-{STARTED:.0f}"
 
 mimetypes.add_type("text/javascript", ".js")
 mimetypes.add_type("text/javascript", ".mjs")
@@ -78,6 +86,8 @@ class Handler(BaseHTTPRequestHandler):
             if target:
                 views = [v for v in views if v.get("target") == target]
             return self.send_json(200, views)
+        if path == "/api/version":
+            return self.send_json(200, {"v": frontend_version()})
         if path.startswith("/api/"):
             return self.send_json(404, {"error": "unknown endpoint"})
         self.serve_frontend(path)

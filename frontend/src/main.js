@@ -28,6 +28,7 @@ import { actor, can } from './roles.js';
 import { renderTopbar } from './views/topbar.js';
 import { renderPicker } from './views/picker.js';
 import { renderClaim } from './views/claim.js';
+import { renderRecord } from './views/records.js';
 import { renderSource } from './views/source.js';
 import { h, clear } from './dom.js';
 
@@ -46,6 +47,8 @@ const state = {
   loadError: false,
   unsaved: [],
   viewsFor: null, // { key, list }: the view log of the open line, loaded for roles that may read it
+  record: null, // id of the record open in the middle column, or null while a line is shown
+  recordsOpen: false,
   allViews: null, // the whole view log, loaded while the "Who opened what" panel is open
   viewLogOpen: false,
   revealed: new Set(), // records whose sensitive numbers this person chose to show (cleared when the role changes)
@@ -63,12 +66,15 @@ const els = {
 // What the views can ask for. Each handler changes state, then render() redraws.
 const on = {
   select(key) {
+    state.record = null; // opening a line closes any open record
     if (location.hash.slice(1) === key) { setKey(key); render(); } else location.hash = key; // hashchange -> setKey
   },
   source(ref) { state.sourceRef = ref; render({ scrollToMark: true }); trackView(ref, 'source'); },
   filter(text) { state.filter = text; render(); },
   attention(flag) { state.onlyAttention = flag; render(); },
   group(key, open) { state.groupsOpen.set(key, open); }, // remembered across redraws; no redraw needed
+  record(id) { state.record = id; if (id) state.recordsOpen = true; render(); els.claim.scrollTop = 0; },
+  recordsOpen(open) { state.recordsOpen = open; },
   passed(open) { state.passedOpen = open; }, // remembered across redraws; no redraw needed
   viewLog(open) { if (open === state.viewLogOpen) return; state.viewLogOpen = open; if (open) refreshAllViews(); }, // load the whole log while its panel is open
   role(roleKey) { state.role = roleKey; state.revealed.clear(); state.allViews = null; render(); refreshViews(); refreshEvents(); if (state.viewLogOpen) refreshAllViews(); },
@@ -210,6 +216,7 @@ function renderBanner() {
 function setKey(key) {
   if (!state.index.current.byKey.has(key)) return;
   state.key = key;
+  state.record = null;
   const trace = traceClaim(state.index, key);
   // Open on the problem if there is one: the first source whose check failed or warned.
   const flagged = claimChecks(state.index, trace).find((c) => c.ref && (c.status === 'fail' || c.status === 'warn'));
@@ -300,7 +307,7 @@ function render({ scrollToMark = false } = {}) {
 
   renderTopbar(els.topbar, state, on);
   renderPicker(els.picker, state, on);
-  renderClaim(els.claim, state, on);
+  if (state.record) renderRecord(els.claim, state, on); else renderClaim(els.claim, state, on);
   renderSource(els.source, state, on);
 
   const list = els.picker.querySelector('.picker-list');

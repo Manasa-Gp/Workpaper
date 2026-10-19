@@ -21,6 +21,7 @@ import { standards } from './standards.js';
 import { statusBar } from './statuscounts.js';
 import { timeBudget } from './timebudget.js';
 import { viewLogPage } from './viewlogpage.js';
+import { recordsPanel } from './records.js';
 
 const GLYPH = { pass: '✓', warn: '!', fail: '×', na: '·' };
 const WORDS = { pass: 'checks pass', warn: 'look at this', fail: 'a check failed', na: 'calculated, no source documents' };
@@ -49,7 +50,7 @@ export function renderPicker(el, state, on) {
 
   clear(el);
   el.append(
-    h('div', { class: 'panels' }, inbox(state, on), approval(state, on), clientCopy(state), filing(state, on), notices(state, on), standards(state, on), timeBudget(state, on), viewLogPage(state, on), nextYear(state), activity(state, on)),
+    h('div', { class: 'panels' }, inbox(state, on), approval(state, on), clientCopy(state), filing(state, on), notices(state, on), recordsPanel(state, on), standards(state, on), timeBudget(state, on), viewLogPage(state, on), nextYear(state), activity(state, on)),
     statusBar(state),
     h('div', { class: 'picker-head' },
       h('input', {
