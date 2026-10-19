@@ -55,7 +55,7 @@ export function basisByYear(state) {
     heading: nice(name),
     columns: [{ label: 'Year or event' }, { label: 'Figures' }, { label: 'Where it came from' }],
     rows: list.map((r) => [
-      r.year ?? r.event,
+      String(r.year ?? r.event), // text, so a year is not drawn as 2,022 and pushed to the right
       Object.entries(r).filter(([k, v]) => !['year', 'event', 'source'].includes(k) && v !== null).map(([k, v]) => `${nice(k)} ${typeof v === 'number' ? v.toLocaleString('en-US') : v}`).join(' · ') || 'No figures recorded',
       r.source ?? null,
     ]),

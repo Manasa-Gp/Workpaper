@@ -19,8 +19,9 @@ import { traceClaim } from '../trace.js';
 import { rejectionsForLine, maskSsn } from '../filing.js';
 import { claimChecks, worst } from '../checks.js';
 import { num, signed, dayTime, dueDay } from '../format.js';
-import { EVENT_LABEL, filedEvent, filedValue, effectiveValue, questionsFor, reviewPointsFor, assignmentsFor, eventsFor, verifiedEvent, signoffBlocker, signoffState, taxEffect, newEvent, needsPartner, PARTNER_OVER } from '../events.js';
+import { EVENT_LABEL, filedEvent, filedValue, effectiveValue, questionsFor, reviewPointsFor, assignmentsFor, eventsFor, verifiedEvent, signoffBlocker, signoffState, taxEffect, newEvent, needsPartner, PARTNER_OVER, DECISION_LABEL } from '../events.js';
 import { actor, can, WHY_NOT } from '../roles.js';
+import { varianceFlags, swingNoteFor } from '../standards.js';
 
 const LABEL = { pass: 'Pass', warn: 'Look at this', fail: 'Failed', na: 'Not applicable' };
 const GLYPH = { pass: '✓', warn: '!', fail: '×', na: '·' };
@@ -96,6 +97,7 @@ export function renderClaim(el, state, on) {
 
     section('Notes, changes and sign-off',
       safe('Actions', () => actions(state, line, value, checks, on)),
+      safe('Judgment', () => judgment(state, line, on)),
       safe('History', () => history(notes.filter((e) => !e.private))),
     ),
   );
@@ -536,6 +538,8 @@ function history(events) {
         h('p', { class: 'hist-head' }, h('strong', {}, what), ` · ${e.by.name} (${e.by.role}) · ${dayTime(e.at)}`),
         e.type === 'adjust' || e.type === 'revert' || e.type === 'amend' ? h('p', {}, `${num(e.from)} → ${num(e.to)}`) : null,
         e.type === 'signoff' ? h('p', {}, `Covers the value ${num(e.valueAtSignoff)}.`) : null,
+        e.type === 'decision' ? h('p', {}, `${DECISION_LABEL[e.category] ?? e.category} · authority: ${e.authority}`) : null,
+        e.swing ? h('p', { class: 'muted' }, 'Explains the change against last year.') : null,
         e.text ? h('p', { class: 'hist-text' }, e.text) : null,
         e.taxEffect ? h('p', { class: 'muted' }, `Estimated tax effect: federal ${signed(e.taxEffect.federal)}, California ${signed(e.taxEffect.california)}.`) : null,
       );
@@ -565,4 +569,55 @@ function amendAction(state, line, value, who, gate, on) {
   return h('div', { class: 'action' }, h('div', { class: 'row2' }, amendValue, amendReason),
     h('p', { class: 'muted' }, 'The return is filed and frozen. This does not change the filed number: it adds an amendment on top.'),
     msg, h('div', { class: 'btns' }, go));
+}
+
+// ---------- judgment (J1 swing explanation, J2 recorded judgments) ----------
+
+function judgment(state, line, on) {
+  if (!can(state.role, 'seepoints')) return ''; // internal to the firm
+  const who = actor(state.index.packet, state.role);
+  const flag = varianceFlags(state.index, state.events).find((f) => f.key === line.key);
+  const explained = swingNoteFor(state.events, line.key);
+  const decisions = eventsFor(state.events, line.key).filter((e) => e.type === 'decision');
+
+  // J1: a big move against last year needs a written reason
+  let swing = null;
+  if (flag) {
+    const why = h('textarea', { rows: '2', placeholder: 'Why did this move? (at least 15 characters)', 'aria-label': 'Why it moved' });
+    const msg = h('p', { class: 'muted' });
+    const go = h('button', {
+      type: 'button', class: 'btn',
+      onClick: () => {
+        const t = why.value.trim();
+        if (t.length < 15) { msg.textContent = 'Write at least 15 characters.'; return; }
+        on.add(newEvent({ claim: line.key, type: 'note', swing: true, by: { name: who.name, role: who.role }, text: t }));
+      },
+    }, 'Explain the change');
+    if (!can(state.role, 'note')) { go.setAttribute('disabled', ''); go.setAttribute('title', WHY_NOT.note); why.setAttribute('disabled', ''); }
+    swing = h('div', { class: 'action swing' },
+      h('p', {}, h('strong', {}, 'Moved against last year. '), `${num(flag.last)} → ${num(flag.now)} (${signed(flag.change)}${flag.pct === null ? ', from zero' : `, ${Math.round(flag.pct)}%`}). The firm asks for a reason when a number moves over 10% and over 1,000.`),
+      explained
+        ? h('p', { class: 'hist-text' }, h('strong', {}, 'Explained: '), explained.text, ` (${explained.by.name})`)
+        : h('div', {}, why, go, msg));
+  }
+
+  // J2: write the judgment down with the authority it rests on
+  const kind = h('select', { 'aria-label': 'Kind of judgment' }, Object.entries(DECISION_LABEL).map(([v, t]) => h('option', { value: v }, t)));
+  const text = h('input', { type: 'text', placeholder: 'What was decided', 'aria-label': 'What was decided' });
+  const authority = h('input', { type: 'text', placeholder: 'Authority relied on (Code section, form instruction, client document)', 'aria-label': 'Authority' });
+  const msg = h('p', { class: 'muted' });
+  const save = h('button', {
+    type: 'button', class: 'btn',
+    onClick: () => {
+      if (text.value.trim().length < 15 || authority.value.trim().length < 3) { msg.textContent = 'Say what was decided (15+ characters) and name the authority.'; return; }
+      on.add(newEvent({ claim: line.key, type: 'decision', category: kind.value, by: { name: who.name, role: who.role }, text: text.value.trim(), authority: authority.value.trim() }));
+    },
+  }, 'Record judgment');
+  if (!can(state.role, 'decide')) { save.setAttribute('disabled', ''); save.setAttribute('title', WHY_NOT.decide); }
+
+  return h('div', { class: 'actions' },
+    swing,
+    decisions.length ? h('ul', { class: 'std-flags' }, decisions.map((d) => h('li', {}, h('strong', {}, `${DECISION_LABEL[d.category] ?? d.category}: `), d.text, ` — authority: ${d.authority} (${d.by.name})`))) : null,
+    h('div', { class: 'action' }, h('p', { class: 'muted' }, 'An election, due diligence, a penalty or any call you made. Write what you decided and what it rests on.'),
+      h('div', { class: 'row2' }, kind, text), authority, h('div', { class: 'btns' }, save), msg));
 }

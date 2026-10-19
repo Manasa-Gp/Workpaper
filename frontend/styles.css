@@ -343,3 +343,5 @@ dl.record dl.record { margin: 0; padding-left: 8px; border-left: 2px solid var(-
 .rec th { white-space: nowrap; color: var(--muted, inherit); font-weight: 600; }
 .rec .rec-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .record-block h2 { font-size: 1em; }
+
+.swing { border-left: 3px solid #b7791f; padding-left: .75rem; }

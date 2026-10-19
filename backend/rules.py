@@ -18,9 +18,9 @@ from pathlib import Path
 
 # role label (as written in event["by"]["role"]) -> event types that role may add
 ALLOWED = {
-    "Preparer": {"note", "adjust", "revert", "evidence", "question", "answer", "done", "amend", "time"},
-    "Reviewer": {"note", "evidence", "verify", "signoff", "question", "answer", "block", "clear", "assign", "done", "present", "time"},
-    "Partner": {"note", "evidence", "verify", "signoff", "question", "answer", "block", "clear", "assign", "done", "present", "file", "time"},
+    "Preparer": {"note", "adjust", "revert", "evidence", "question", "answer", "done", "amend", "time", "decision"},
+    "Reviewer": {"note", "evidence", "verify", "signoff", "question", "answer", "block", "clear", "assign", "done", "present", "time", "decision"},
+    "Partner": {"note", "evidence", "verify", "signoff", "question", "answer", "block", "clear", "assign", "done", "present", "file", "time", "decision"},
     "Quality reviewer": set(),  # reads everything, changes nothing (the packet has them join on 2027-01-04)
     "Client": {"answer", "approve"},  # the client answers questions and approves/signs the return; nothing else
     "Administrator": set(),
@@ -43,6 +43,10 @@ def check_event(event, events=()):
         return f"A {role} may not add a '{kind}' event."
     if kind == "time":
         return _check_time(event)
+    if kind == "decision":
+        return _check_decision(event)
+    if kind == "note" and event.get("swing") and len(str(event.get("text", "")).strip()) < 15:
+        return "An explanation of a change against last year needs at least 15 characters."
     if kind == "file":
         return _check_file(event, events)
     if kind == "amend":
@@ -114,6 +118,20 @@ def _check_time(event):
     hours = event.get("hours")
     if not _is_number(hours) or not (0 < hours <= MAX_HOURS):
         return f"Hours must be a number above 0 and at most {MAX_HOURS}."
+    return None
+
+
+# A 'decision' is a judgment call written down with the authority it rests on (J2).
+DECISION_KINDS = ("election", "due_diligence", "penalty", "judgment")
+
+
+def _check_decision(event):
+    if event.get("category") not in DECISION_KINDS:
+        return "A decision must be an election, due diligence, a penalty or a judgment."
+    if len(str(event.get("text", "")).strip()) < 15:
+        return "Say what was decided (at least 15 characters)."
+    if len(str(event.get("authority", "")).strip()) < 3:
+        return "Name the authority relied on (a Code section, a form instruction, or the client's document)."
     return None
 
 
@@ -344,7 +362,7 @@ def check_view(view):
 # A question is private to the person who asked it, the person it is for, and the Partner
 # (who signs off the whole file). Everyone else only learns that a question exists.
 
-STAFF_ONLY_KINDS = ("block", "clear", "assign", "done", "time")  # the firm's internal working notes
+STAFF_ONLY_KINDS = ("block", "clear", "assign", "done", "time", "decision")  # the firm's internal working notes
 STAFF_READERS = set(STAFF_ROLES) | {"Quality reviewer"}
 
 

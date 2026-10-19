@@ -26,11 +26,14 @@ export function varianceFlags(index, events) {
     const change = now - last.value;
     const pct = last.value === 0 ? null : (Math.abs(change) / Math.abs(last.value)) * 100; // null = from zero
     if (Math.abs(change) > rule.and_over_amount && (pct === null || pct > rule.flag_if_change_over_percent)) {
-      out.push({ key: line.key, label: line.label, now, last: last.value, change, pct });
+      out.push({ key: line.key, label: line.label, now, last: last.value, change, pct, explained: Boolean(swingNoteFor(events, line.key)) });
     }
   }
   return out.sort((a, b) => Math.abs(b.change) - Math.abs(a.change));
 }
+
+/** The note that explains why a line moved against last year (J1), or undefined. Newest wins. */
+export const swingNoteFor = (events, key) => [...events].reverse().find((e) => e.type === 'note' && e.swing && e.claim === key);
 
 /** Sign-offs by someone who also adjusted (or amended) the same number. One row per line and person. */
 export function selfReviews(events) {

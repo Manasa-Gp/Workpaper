@@ -194,3 +194,16 @@ assert "Hours" in check_event(tm("business", "3"))
 assert "may not" in check_event({**tm("business", 1), "by": {"name": "x", "role": "Client"}})
 assert not any(e.get("type") == "time" for e in visible_events([tm("business", 1)], "Client"))
 assert any(e.get("type") == "time" for e in visible_events([tm("business", 1)], "Reviewer"))
+
+
+# J1/J2: explaining a swing, and recording a judgment with its authority
+def dec(**kw): return {**ev("Preparer", "decision"), "category": "election", "text": "Elected to expense the equipment", "authority": "IRC 179", **kw}
+assert check_event(dec()) is None
+assert "authority" in check_event(dec(authority=""))
+assert "decided" in check_event(dec(text="short"))
+assert "election" in check_event(dec(category="hunch"))
+assert "may not" in check_event({**dec(), "by": {"name": "x", "role": "Client"}})
+assert not any(e.get("type") == "decision" for e in visible_events([dec()], "Client"))
+assert "15 characters" in check_event({**ev("Preparer", "note"), "swing": True, "text": "up"})
+assert check_event({**ev("Preparer", "note"), "swing": True, "text": "Ngozi changed jobs in July, so wages rose."}) is None
+print("judgment ok")

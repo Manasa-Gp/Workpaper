@@ -6,6 +6,8 @@ import { depreciation, fedCaAmt, salesDetail } from './assets.js';
 import { booksToTax, rentals, k1Lines, retirementForeign, deductionsCredits } from './income.js';
 import { stateSplit, carryovers, basisByYear, priorPreparer } from './history.js';
 
+import { completeness, decisionsLog } from './judgment.js';
+
 export const RECORDS = [
   { id: 'summary', group: 'Return', title: 'Return summary against last year', build: returnSummary },
   { id: 'computation', group: 'Return', title: 'Tax computation', build: taxComputation },
@@ -24,6 +26,8 @@ export const RECORDS = [
   { id: 'carryovers', group: 'History', title: 'Carryovers', build: carryovers },
   { id: 'basis', group: 'History', title: 'Basis by year', build: basisByYear },
   { id: 'prior', group: 'History', title: 'Prior preparer against what we changed', build: priorPreparer },
+  { id: 'completeness', group: 'Judgment', title: 'Completeness: what might be missing', build: completeness },
+  { id: 'decisions', group: 'Judgment', title: 'Judgments and their authority', build: decisionsLog },
 ];
 
 export const recordById = (id) => RECORDS.find((r) => r.id === id) ?? null;

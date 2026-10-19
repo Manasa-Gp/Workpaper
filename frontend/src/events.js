@@ -176,11 +176,13 @@ export function inboxFor(events, roleLabel, today) {
 // ---------- presenting the return and the client's approval ----------
 
 /** Words for each kind of event, used by the line history and the activity list. */
+export const DECISION_LABEL = { election: 'Election', due_diligence: 'Due diligence', penalty: 'Penalty', judgment: 'Judgment call' };
+
 export const EVENT_LABEL = {
   note: 'Note', adjust: 'Adjusted', signoff: 'Signed off', revert: 'Reverted', verify: 'Verified',
   evidence: 'Evidence added', question: 'Question', answer: 'Answer', block: 'Review point', clear: 'Review point cleared',
   assign: 'Assigned', done: 'Task done', present: 'Presented for approval', approve: 'Approved and signed',
-  file: 'Filed and frozen', amend: 'Amended after filing', time: 'Time recorded',
+  file: 'Filed and frozen', amend: 'Amended after filing', time: 'Time recorded', decision: 'Judgment recorded',
 };
 
 // ---------- freeze at filing, amend on top ----------
