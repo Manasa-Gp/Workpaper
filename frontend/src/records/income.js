@@ -1,12 +1,26 @@
 // records/income.js — R4: books to tax, rentals and passive losses, K-1 lines, retirement and foreign items, deductions and credits.
 
 import { context, diff, lineByKey, lineTable, link, nice, valueOf } from './core.js';
+import { bridgeFor, crossFor } from '../serverchecks.js';
 
 export function booksToTax(state) {
   const ctx = context(state);
+  const bridge = bridgeFor(state);
+  const checks = crossFor(state).filter((c) => c.id === 'rec-books' || c.id === 'rec-taxable');
+  const bridgeTables = bridge ? [{
+    heading: 'From the books to taxable income',
+    columns: [{ label: 'Step' }, { label: 'Change', num: true }, { label: 'Running total', num: true }, { label: 'Why' }, { label: 'Line' }],
+    rows: bridge.rows.map((r) => [r.label, r.amount, r.running, r.why, r.lines[0] ? link(r.lines[0]) : null]),
+    note: bridge.unexplained ? `${bridge.unexplained} is left unexplained between the books and Schedule C.` : 'Every difference between the books and Schedule C is listed. Nothing is left unexplained.',
+  }, {
+    heading: 'Does the bridge add up?',
+    columns: [{ label: 'Check' }, { label: 'Result' }, { label: 'What it means' }],
+    rows: checks.map((c) => [c.label, c.status === 'pass' ? 'Agrees' : 'Does not agree', c.detail]),
+  }] : [];
   return {
-    intro: 'The studio\'s books turned into Schedule C. Lines marked with a note show where the tax figure differs from the books, and why.',
+    intro: 'The studio\'s books turned into Schedule C, and from there into taxable income. The bridge lists every difference and why it exists; the lines below show the detail.',
     tables: [
+      ...bridgeTables,
       lineTable(ctx, 'Schedule C, line by line', (l) => l.form === 'SchC', { prior: true, rule: true }),
       lineTable(ctx, 'Where tax differs from the books', (l) => ['SchC', 'F4562-C', 'F4562-E', 'SchSE', 'Sch1'].includes(l.form) && /book/i.test(l.note ?? ''), { note: true }),
       lineTable(ctx, 'Self-employment tax (Schedule SE)', (l) => l.form === 'SchSE', {}),

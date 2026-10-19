@@ -32,7 +32,8 @@ export async function appendEvent(event) {
     body: JSON.stringify(event),
   });
   if (response.status === 403) { // the server's rules refused it: retrying will never help
-    const refused = new Error('The server refused this event');
+    const reason = await response.json().then((b) => b.error, () => null);
+    const refused = new Error(reason || 'The server refused this event');
     refused.rejected = true;
     throw refused;
   }
@@ -53,38 +54,6 @@ export const verifiedEvent = (events, claim, verifyKey) =>
 export function effectiveValue(line, events) {
   const changes = eventsFor(events, line.key).filter((e) => e.type === 'adjust' || e.type === 'revert' || e.type === 'amend');
   return changes.length ? changes[changes.length - 1].to : line.value;
-}
-
-/**
- * Why a claim cannot be signed off yet, or null if it can. The rule:
- *   - any warning or failure needs a note on the claim that explains it;
- *   - a check that asks for a person's confirmation needs that confirmation (Mark verified).
- * A passing check with nothing to confirm never blocks.
- */
-const MIN_NOTE = 15;
-
-export function signoffBlocker(checks, events, claim) {
-  const mine = eventsFor(events, claim);
-  if (filedEvent(events) && !mine.some((e) => e.type === 'amend')) return 'The return is filed and frozen. Only an amended line can be signed off.';
-  const open = openReviewPoints(events, claim).length;
-  if (open) return `${open} review point${open === 1 ? ' is' : 's are'} still open. Clear ${open === 1 ? 'it' : 'them'} before signing.`;
-  const waiting = checks.filter((c) => c.verify && !verifiedEvent(events, claim, c.verifyKey));
-  if (waiting.length) return 'A flagged check is waiting for verification. Click Mark verified first.';
-  const problem = checks.find((c) => c.status === 'fail' || c.status === 'warn');
-  // A note counts only if it is long enough to hold a reason ("hey" is not one). Judging the reason is the reviewer's job.
-  if (problem && !mine.some((e) => e.type === 'note' && (e.text ?? '').trim().length >= MIN_NOTE)) {
-    return `${problem.status === 'fail' ? 'A check failed' : 'A check shows a warning'}. Add a note explaining it (at least ${MIN_NOTE} characters) before signing.`;
-  }
-  return null;
-}
-
-/** 'none' | 'signed' | 'reopened' */
-export function signoffState(line, events) {
-  const signoffs = eventsFor(events, line.key).filter((e) => e.type === 'signoff');
-  if (!signoffs.length) return { state: 'none' };
-  const last = signoffs[signoffs.length - 1];
-  const now = effectiveValue(line, events);
-  return { state: last.valueAtSignoff === now ? 'signed' : 'reopened', last, now };
 }
 
 // ---------- tax effect of an adjustment ----------
@@ -109,17 +78,6 @@ export function taxEffect(version, lineKey, delta) {
     california: delta * rate.california_per_dollar,
     estimated: true,
   };
-}
-
-/** Firm standard: an adjustment with a tax effect over this (federal or California) must be signed off by the Partner. */
-export const PARTNER_OVER = 1000;
-
-/** True if the line's latest change is an adjustment whose estimated tax effect is over PARTNER_OVER. */
-export function needsPartner(events, claim) {
-  const last = [...events].reverse().find((e) => e.claim === claim && ['adjust', 'revert', 'amend'].includes(e.type));
-  const fx = last?.type === 'adjust' ? last.taxEffect : null;
-  if (!fx) return false;
-  return Math.max(Math.abs(fx.federal ?? 0), Math.abs(fx.california ?? 0)) > PARTNER_OVER;
 }
 
 /** Review points ('block' events) on a line that no 'clear' event has closed yet. They stop sign-off. */
@@ -205,41 +163,6 @@ export const filedValue = (events, key) => filedEvent(events)?.snapshot?.[key] ?
 
 /** Events about the whole return (not one line) are saved under this key. */
 export const RETURN_KEY = 'RETURN';
-
-/**
- * A short fingerprint of every number on the return as it stands now (engine values plus adjustments).
- * If any number changes, the fingerprint changes. Same numbers always give the same text, in any browser.
- */
-export function returnFingerprint(lines, events) {
-  let hash = 0x811c9dc5; // FNV-1a, a small well-known hash
-  const text = lines
-    .filter((l) => l.value !== null && l.value !== undefined)
-    .map((l) => `${l.key}=${effectiveValue(l, events)}`)
-    .join('|');
-  for (let i = 0; i < text.length; i += 1) {
-    hash ^= text.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return `${hash.toString(16).padStart(8, '0')}-${text.length}`;
-}
-
-/** The people who must sign a joint return: the taxpayer and the spouse. */
-export const signersOf = (packet) => packet.household.people.filter((p) => p.role === 'taxpayer' || p.role === 'spouse').map((p) => p.name);
-
-/** Where the return is in approval: 'none' | 'presented' | 'partly' | 'approved' | 'stale' (numbers changed after presenting). */
-export function approvalState(events, fingerprint, signers) {
-  const presents = events.filter((e) => e.type === 'present');
-  const present = presents[presents.length - 1] ?? null;
-  if (!present) return { state: 'none', present: null, signed: [], missing: signers };
-  const signed = events.filter((e) => e.type === 'approve' && e.presents === present.id);
-  const names = new Set(signed.map((e) => e.signer));
-  const missing = signers.filter((n) => !names.has(n));
-  let state = 'presented';
-  if (present.fingerprint !== fingerprint) state = 'stale';
-  else if (!missing.length) state = 'approved';
-  else if (signed.length) state = 'partly';
-  return { state, present, signed, missing };
-}
 
 /** Review points still open on any line (they stop the return being presented). */
 export const allOpenReviewPoints = (events) => {

@@ -10,9 +10,6 @@
 
 const money = (n) => new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(n);
 
-/** 666-74-3390 -> "•••-••-3390": enough to compare two numbers without printing the whole thing. */
-export const maskSsn = (ssn) => (ssn ? `•••-••-${String(ssn).slice(-4)}` : '—');
-
 /** The current return's totals (the latest version), used to fill in amounts the agency record leaves as words. */
 const latestSummary = (packet) => packet.return_versions[packet.return_versions.length - 1].summary;
 
@@ -112,40 +109,13 @@ const CATALOGUE = {
   },
 };
 
-const SSN_PATTERN = /\d{3}-\d{2}-\d{4}/;
-
-/** Two numbers that differ only by two neighbouring digits swapped (3309 vs 3390). */
-const isSwap = (a, b) => {
-  const x = a.replace(/\D/g, '');
-  const y = b.replace(/\D/g, '');
-  if (x.length !== y.length) return false;
-  const diff = [...x].map((c, i) => (c === y[i] ? -1 : i)).filter((i) => i >= 0);
-  return diff.length === 2 && diff[1] === diff[0] + 1 && x[diff[0]] === y[diff[1]] && x[diff[1]] === y[diff[0]];
-};
-
-/**
- * If the message names someone in the household, compare the number the organizer holds for them with
- * the number printed on their Social Security card. Returns null when there is nothing to compare.
- */
-export function ssnMismatch(packet, message) {
-  const person = packet.household.people.find((p) => message.includes(p.name));
-  if (!person) return null;
-  const card = packet.documents.find((d) => d.document_type === 'identity_document' && String(d.belongs_to).endsWith(`:${person.id}`) && SSN_PATTERN.test(JSON.stringify(d.pages ?? '')));
-  if (!card) return null;
-  const cardSsn = JSON.stringify(card.pages).match(SSN_PATTERN)[0];
-  if (cardSsn === person.ssn) return null;
-  // The viewer opens an extracted value (it highlights the number on the page), so point at that when there is one.
-  const value = packet.extracted_values.find((v) => v.document_id === card.id && /social security/i.test(v.label));
-  return { person: person.name, organizer: person.ssn, card: cardSsn, docId: card.id, valueRef: value?.id ?? card.id, swapped: isSwap(person.ssn, cardSsn) };
-}
-
 /**
  * Every rejection in the agency's e-file record, each with:
  *   held        submissions the other agency did not receive because of this one
  *   resolvedBy  the next accepted submission for the same agency (null if still open)
  *   help        what the code means, the lines it concerns, and the evidence for the fix
  */
-export function rejections(packet) {
+export function rejections(packet, mismatches = {}) {
   const efile = packet.tax_agency_records.efile;
   const out = [];
   for (const s of efile.filter((x) => x.status === 'rejected')) {
@@ -156,7 +126,7 @@ export function rejections(packet) {
         error,
         held: efile.filter((x) => x.status === 'not_transmitted' && x.date === s.date),
         resolvedBy: efile.filter((x) => x.jurisdiction === s.jurisdiction && x.status === 'accepted' && x.date > s.date).sort((a, b) => a.date.localeCompare(b.date))[0] ?? null,
-        help: entry ? { ...entry, mismatch: ssnMismatch(packet, error.message) } : null,
+        help: entry ? { ...entry, mismatch: mismatches[error.message] ?? null } : null,
       });
     }
   }
@@ -164,4 +134,4 @@ export function rejections(packet) {
 }
 
 /** The rejections that concern one line (empty for most lines). */
-export const rejectionsForLine = (packet, lineKey) => rejections(packet).filter((r) => r.help?.lines.includes(lineKey));
+export const rejectionsForLine = (packet, lineKey, mismatches) => rejections(packet, mismatches).filter((r) => r.help?.lines.includes(lineKey));

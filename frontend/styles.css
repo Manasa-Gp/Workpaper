@@ -373,3 +373,10 @@ dl.record dl.record { margin: 0; padding-left: 8px; border-left: 2px solid var(-
 .new-bar { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); z-index: 20; background: var(--panel); border: 1px solid var(--accent); border-radius: 999px; padding: 6px 16px; box-shadow: var(--shadow); font-size: 13px; }
 
 .tryit-banner { position: sticky; top: -20px; z-index: 5; }
+
+/* Cal2: long record tables keep the rows with problems open and fold the rest */
+.rec tr.rec-flag td { background: var(--warn-bg, #fff6e0); }
+.rec tr.rec-fail td { background: var(--fail-bg, #fde8e8); }
+.rec-count { font-weight: 400; font-size: .85em; color: var(--muted, #666); }
+.rec-fold { margin: .5rem 0; }
+.rec-fold > summary { cursor: pointer; padding: .35rem 0; }

@@ -27,7 +27,10 @@ import time
 
 from datetime import datetime, timezone
 
-from checks import all_checks
+from checks import all_checks, effective_value, load_index
+from mask import ROLE_LABEL, cleared, find_record, mask_deep, staff_name
+
+ROLE_LABEL_ALL = {**ROLE_LABEL, "client": "Client"}
 from rules import can_read_views, can_replace_events, check_event, check_view, undone_batches, visible_events
 
 HERE = Path(__file__).resolve().parent
@@ -41,6 +44,18 @@ HOST = os.environ.get("HOST", "127.0.0.1")  # on a host, set HOST=0.0.0.0 so out
 MAX_BODY = 5_000_000
 LOCK = threading.Lock()
 STARTED = time.time()  # changes every time the server restarts
+
+
+_MASKED = {"stamp": None, "packet": None}
+
+
+def masked_packet():
+    """The packet with SSNs, PINs and bank numbers hidden. Rebuilt only when packet.json changes on disk."""
+    stamp = PACKET.stat().st_mtime
+    if _MASKED["stamp"] != stamp:
+        _MASKED["packet"] = mask_deep(json.loads(PACKET.read_text(encoding="utf-8")))
+        _MASKED["stamp"] = stamp
+    return _MASKED["packet"]
 
 
 def frontend_version():
@@ -73,7 +88,11 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/packet":
             if not PACKET.exists():
                 return self.send_json(404, {"error": "Put packet.json in backend/data/"})
-            return self.send(200, PACKET.read_bytes())
+            return self.send_json(200, masked_packet())  # sensitive numbers never leave in this answer (see mask.py)
+        if path == "/api/signoff-check":
+            return self.signoff_check(parse_qs(urlparse(self.path).query))
+        if path == "/api/reveal":
+            return self.reveal(parse_qs(urlparse(self.path).query))
         if path == "/api/events":
             role = (parse_qs(urlparse(self.path).query).get("role") or [""])[0]
             events = json.loads(EVENTS.read_text(encoding="utf-8")) if EVENTS.exists() else []
@@ -101,6 +120,34 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/"):
             return self.send_json(404, {"error": "unknown endpoint"})
         self.serve_frontend(path)
+
+    def signoff_check(self, query):
+        """Would this role be allowed to sign this line off right now? The answer is the same rule the server applies to a real sign-off."""
+        role_key = (query.get("as") or [""])[0]
+        claim = (query.get("claim") or [""])[0]
+        index = load_index()
+        line = index.by_key.get(claim) if index else None
+        if not line or role_key not in ROLE_LABEL_ALL:
+            return self.send_json(404, {"error": "Unknown line or role."})
+        events = json.loads(EVENTS.read_text(encoding="utf-8")) if EVENTS.exists() else []
+        counting = [e for e in events if e.get("type") == "undo" or e.get("batch") not in undone_batches(events)]
+        packet = index.packet
+        name = packet["household"]["people"][0]["name"] if role_key == "client" else staff_name(packet, role_key)
+        event = {"claim": claim, "type": "signoff", "by": {"name": name, "role": ROLE_LABEL_ALL[role_key]}, "valueAtSignoff": effective_value(line, counting)}
+        return self.send_json(200, {"problem": check_event(event, events)})
+
+    def reveal(self, query):
+        """The real record behind a source reference, only for a role the firm has cleared. Each reveal is logged by the server."""
+        role_key = (query.get("as") or [""])[0]
+        ref = (query.get("ref") or [""])[0]
+        packet = json.loads(PACKET.read_text(encoding="utf-8"))
+        if not cleared(packet, role_key):
+            return self.send_json(403, {"error": "This role is not cleared to see sensitive numbers."})
+        record = find_record(packet, ref)
+        if record is None:
+            return self.send_json(404, {"error": "Nothing found at that location."})
+        self.write_view({"target": f"reveal:{ref}", "kind": "source", "by": {"name": staff_name(packet, role_key), "role": ROLE_LABEL[role_key]}})
+        self.send_json(200, {"record": record})
 
     def serve_frontend(self, path):
         wanted = "index.html" if path == "/" else path.lstrip("/")
@@ -160,11 +207,18 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, {"ok": True, "count": len(events)})
 
     def post_view(self, view):
-        if not isinstance(view, dict):
-            return self.send_json(400, {"error": "expected a view record"})
-        reason = check_view(view)
+        reason = self.write_view(view)
         if reason:
             return self.send_json(400, {"error": reason})
+        self.send_json(200, {"ok": True})
+
+    def write_view(self, view):
+        """Adds one line to the view log. Returns a sentence saying why not, or None."""
+        if not isinstance(view, dict):
+            return "expected a view record"
+        reason = check_view(view)
+        if reason:
+            return reason
         record = {  # the server writes the time itself, so a client cannot backdate a view
             "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "target": view["target"],
@@ -176,7 +230,7 @@ class Handler(BaseHTTPRequestHandler):
             views.append(record)
             DATA.mkdir(parents=True, exist_ok=True)
             VIEWS.write_text(json.dumps(views, indent=2), encoding="utf-8")
-        self.send_json(200, {"ok": True})
+        return None
 
     def log_message(self, fmt, *args):            # keep the terminal quiet
         pass

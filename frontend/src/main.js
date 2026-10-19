@@ -21,8 +21,7 @@
 import { loadFromBackend, readPacketFile } from './loadPacket.js';
 import { buildIndex } from './packetIndex.js';
 import { traceClaim } from './trace.js';
-import { worst } from './checks.js';
-import { checksFor, loadChecks } from './serverchecks.js';
+import { checksFor, loadChecks, loadSignoffCheck, worst } from './serverchecks.js';
 import { loadEvents, saveEvents, appendEvent, verifiedEvent, effectiveValue } from './events.js';
 import { recordView, loadViews, loadAllViews } from './viewlog.js';
 import { actor, can } from './roles.js';
@@ -37,6 +36,8 @@ import { h, clear } from './dom.js';
 
 const state = {
   index: null,
+  refusal: '', // why the server refused the last change, until dismissed
+  signoffCheck: null, // { key, role, events, problem }: the server's answer to "may this role sign this line off now?"
   serverChecks: null, // the server's answer from GET /api/checks (see serverchecks.js)
   role: 'preparer',
   since: readSince('preparer'), // Ch1: when this role last looked (this browser only)
@@ -62,7 +63,7 @@ const state = {
   recordsOpen: false,
   allViews: null, // the whole view log, loaded while the "Who opened what" panel is open
   viewLogOpen: false,
-  revealed: new Set(), // records whose sensitive numbers this person chose to show (cleared when the role changes)
+  revealed: new Map(), // ref -> the real record the server sent to a cleared role (cleared when the role changes)
 };
 
 const els = {
@@ -119,10 +120,15 @@ const on = {
   passed(open) { state.passedOpen = open; }, // remembered across redraws; no redraw needed
   viewLog(open) { if (open === state.viewLogOpen) return; state.viewLogOpen = open; if (open) refreshAllViews(); }, // load the whole log while its panel is open
   role(roleKey) { pending = null; showNewBar(); writeSince(state.role); state.role = roleKey; state.since = readSince(roleKey); state.onlyNew = false; state.revealed.clear(); state.allViews = null; render(); refreshViews(); refreshEvents(); if (state.viewLogOpen) refreshAllViews(); },
-  reveal(ref) { // show or hide the sensitive numbers of one record; showing is recorded in the view log
-    if (state.revealed.has(ref)) state.revealed.delete(ref);
-    else { state.revealed.add(ref); trackView(`reveal:${ref}`, 'source'); }
-    render();
+  async reveal(ref) { // show or hide the sensitive numbers of one record; the server checks the role and logs the reveal
+    if (state.revealed.has(ref)) { state.revealed.delete(ref); render(); return; }
+    try {
+      const res = await fetch(`/api/reveal?ref=${encodeURIComponent(ref)}&as=${encodeURIComponent(state.role)}`);
+      if (!res.ok) return;
+      state.revealed.set(ref, (await res.json()).record);
+      state.viewsFor = null;
+      render();
+    } catch { /* server unreachable: stay hidden */ }
   }, // the log is only readable by some roles
   add(event) {
     if (state.loadError) return;
@@ -188,17 +194,18 @@ async function start(packet) {
     state.events = [];
     state.loadError = true; // banner: could not load saved work, saving is off until you reload
   }
+  try { state.serverChecks = await loadChecks(); checkedFor = state.events; } catch { state.serverChecks = null; } // the server works out every check
   setKey(decodeURIComponent(location.hash.slice(1)) || 'F1040.1a');
   render();
 }
 
-/** One status per line, from the checks in checks.js. Lines with no source documents are 'na'. */
+/** One status per line, from the server's checks. Lines with no source documents are 'na'. */
 function computeStatuses(state) {
   const { index, events } = state;
   const statuses = new Map();
   for (const line of index.current.lines) {
     if (!line.sources?.length) { statuses.set(line.key, 'na'); continue; }
-    const checks = checksFor(state, traceClaim(index, line.key), effectiveValue(line, events));
+    const checks = checksFor(state, traceClaim(index, line.key));
     const waiting = checks.some((c) => c.verify && !verifiedEvent(events, line.key, c.verifyKey));
     const status = worst(checks);
     // A line is only 'pass' once every flagged check has been confirmed by a person.
@@ -228,6 +235,7 @@ async function flush() {
           const refused = state.unsaved[0];
           state.unsaved = state.unsaved.slice(1);
           state.events = state.events.filter((e) => e.id !== refused.id);
+          state.refusal = err.message; // shown in the banner so the person knows why nothing happened
           continue;
         }
         state.saveError = true;
@@ -245,13 +253,15 @@ async function flush() {
 }
 
 function renderBanner() {
-  const failed = state.loadError || state.saveError;
+  const failed = state.loadError || state.saveError || state.refusal;
   els.banner.hidden = !failed;
   clear(els.banner);
   if (!failed) return;
   els.banner.append(
-    state.loadError ? 'Could not load saved work, so saving is turned off. ' : 'Not saved on the server yet. ',
-    h('button', { type: 'button', class: 'linkish', onClick: () => on.retry() }, 'Retry'),
+    state.loadError ? 'Could not load saved work, so saving is turned off. ' : state.saveError ? 'Not saved on the server yet. ' : `Not allowed: ${state.refusal} `,
+    state.loadError || state.saveError
+      ? h('button', { type: 'button', class: 'linkish', onClick: () => on.retry() }, 'Retry')
+      : h('button', { type: 'button', class: 'linkish', onClick: () => { state.refusal = ''; render(); } }, 'Dismiss'),
   );
 }
 
@@ -262,7 +272,7 @@ function setKey(key) {
   state.record = null;
   const trace = traceClaim(state.index, key);
   // Open on the problem if there is one: the first source whose check failed or warned.
-  const flagged = checksFor(state, trace, effectiveValue(trace.line, state.events)).find((c) => c.ref && (c.status === 'fail' || c.status === 'warn'));
+  const flagged = checksFor(state, trace).find((c) => c.ref && (c.status === 'fail' || c.status === 'warn'));
   const first = trace.sources.find((s) => s.kind === 'value') ?? trace.sources[0];
   state.sourceRef = flagged ? flagged.ref : first ? first.ref : null;
   trackView(key, 'line');
@@ -345,9 +355,22 @@ function ensureChecks() {
     .finally(() => { fetchingChecks = false; checkedFor = asked; render(); });
 }
 
+// Ask the server whether this role may sign the open line off. The answer is the server's own rule, not a copy of it.
+let fetchingSignoff = false;
+function ensureSignoffCheck() {
+  const have = state.signoffCheck;
+  if (!state.index || state.record || fetchingSignoff || state.unsaved.length || !can(state.role, 'signoff')) return;
+  if (have && have.key === state.key && have.role === state.role && have.events === state.events) return;
+  fetchingSignoff = true;
+  const ask = { key: state.key, role: state.role, events: state.events };
+  loadSignoffCheck(ask.key, ask.role).then((problem) => ({ ...ask, problem }), () => ({ ...ask, problem: null }))
+    .then((answer) => { state.signoffCheck = answer; }).finally(() => { fetchingSignoff = false; render(); });
+}
+
 function render({ scrollToMark = false } = {}) {
   if (!state.index) return;
   ensureChecks();
+  ensureSignoffCheck();
   const scope = `${state.key}|${state.role}`;
   if (draftScope) saveDrafts(draftScope); // the boxes still on screen belong to the line and role we are leaving
   draftScope = scope;

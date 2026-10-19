@@ -35,7 +35,7 @@ export function renderRecord(el, state, on) {
       built.intro ? h('p', { class: 'muted' }, built.intro) : null,
       h('button', { type: 'button', class: 'btn btn-quiet', onClick: () => on.record(null) }, 'Close and go back to the numbers'),
     ),
-    ...built.tables.map((t) => table(t, on)),
+    ...built.tables.map((t) => table(t, state, on)),
   );
 }
 
@@ -46,15 +46,35 @@ function cell(value, column, on) {
   return h('td', { class: column?.num ? 'rec-num' : '' }, String(value));
 }
 
-function table(t, on) {
+const FOLD_OVER = 25; // a table longer than this keeps only its problem rows open
+
+/** The worst check status of the line a row is about (the server's answer), or null if the row is not about a line. */
+function rowStatus(row, state) {
+  const key = row[0] && typeof row[0] === 'object' ? row[0].key : null;
+  return key ? state.serverChecks?.claims[key]?.worst ?? null : null;
+}
+
+function table(t, state, on) {
+  const problem = (row) => ['fail', 'warn'].includes(rowStatus(row, state));
+  const flagged = t.rows.filter(problem);
+  const rest = t.rows.filter((r) => !problem(r));
+  const head = h('thead', {}, h('tr', {}, t.columns.map((c) => h('th', { class: c.num ? 'rec-num' : '' }, c.label))));
+  const body = (rows) => h('tbody', {}, rows.map((row) => {
+    const status = rowStatus(row, state);
+    return h('tr', { class: problem(row) ? `rec-flag rec-${status}` : '' }, row.map((v, i) => cell(v, t.columns[i], on)));
+  }));
+  const grid = (rows) => h('div', { class: 'rec-scroll' }, h('table', { class: 'rec' }, head.cloneNode(true), body(rows)));
+  const fold = t.rows.length > FOLD_OVER;
+  let content;
+  if (!t.rows.length) content = h('p', { class: 'muted' }, t.note ?? 'Nothing to show.');
+  else if (!fold) content = grid([...flagged, ...rest]);
+  else content = [
+    flagged.length ? grid(flagged) : h('p', { class: 'muted' }, 'No row here has a warning or a failed check.'),
+    rest.length ? h('details', { class: 'rec-fold' }, h('summary', {}, flagged.length ? `Show the other ${rest.length} rows` : `Show all ${rest.length} rows`), grid(rest)) : null,
+  ].filter(Boolean);
   return h('section', { class: 'block record-block' },
-    h('h2', {}, t.heading, ` (${t.rows.length})`),
-    t.rows.length
-      ? h('div', { class: 'rec-scroll' }, h('table', { class: 'rec' },
-        h('thead', {}, h('tr', {}, t.columns.map((c) => h('th', { class: c.num ? 'rec-num' : '' }, c.label)))),
-        h('tbody', {}, t.rows.map((row) => h('tr', {}, row.map((v, i) => cell(v, t.columns[i], on))))),
-      ))
-      : h('p', { class: 'muted' }, t.note ?? 'Nothing to show.'),
+    h('h2', {}, t.heading, ` (${t.rows.length})`, flagged.length ? h('span', { class: 'rec-count' }, ` · ${flagged.length} need a look`) : null),
+    content,
     t.rows.length && t.note ? h('p', { class: 'muted' }, t.note) : null,
   );
 }

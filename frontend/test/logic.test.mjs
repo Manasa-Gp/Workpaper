@@ -4,14 +4,16 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { buildIndex, docLanding } from '../src/packetIndex.js';
 import { traceClaim } from '../src/trace.js';
-import { printedMatch, duplicateDoc, duplicatePage, claimChecks, worst } from '../src/checks.js';
+import { execFileSync } from 'node:child_process';
 import { can, canSeeSensitive } from '../src/roles.js';
-import { maskDeep, maskText, maskNumber, hasSecrets } from '../src/mask.js';
-import { filingTimeline, filingStatus, rejections, rejectionsForLine, ssnMismatch, maskSsn } from '../src/filing.js';
-import { questionsFor, openQuestionCount, effectiveValue, signoffState, taxEffect, signoffBlocker, openReviewPoints, reviewPointsFor, assignmentsFor, inboxFor, returnFingerprint, approvalState, signersOf, allOpenReviewPoints, EVENT_LABEL, filedEvent, snapshotOf, amendmentsOf, filedValue } from '../src/events.js';
+import { filingTimeline, filingStatus, rejections, rejectionsForLine } from '../src/filing.js';
+import { questionsFor, openQuestionCount, effectiveValue, taxEffect, openReviewPoints, reviewPointsFor, assignmentsFor, inboxFor, allOpenReviewPoints, EVENT_LABEL, filedEvent, snapshotOf, amendmentsOf, filedValue } from '../src/events.js';
 
 const packet = JSON.parse(readFileSync(new URL('../../backend/data/packet.json', import.meta.url)));
 const index = buildIndex(packet);
+// The checks are worked out by the server (backend/checks.py). The tests ask it for its answers.
+const server = JSON.parse(execFileSync('python3', [new URL('../../backend/dump_checks.py', import.meta.url).pathname], { maxBuffer: 1e9 }));
+const claimChecks = (_index, trace) => server.claims[trace.line.key].checks;
 let passed = 0;
 const test = (name, fn) => { fn(); passed += 1; console.log('ok  ', name); };
 
@@ -25,51 +27,15 @@ test('F1040.1a traces to two W-2 box 1 values that add up', () => {
   assert.deepEqual(trace.feeds.map((l) => l.key), ['F1040.1z']);
 });
 
-test('the Halvorsen W-2 is flagged as a probable duplicate (D09 vs D10)', () => {
-  assert.equal(duplicateDoc(index, 'D09').status, 'warn');
-  assert.equal(duplicateDoc(index, 'D10').status, 'warn');
-});
-
-test('the corrected Meridian 1099 supersedes the original (D30 vs D31)', () => {
-  assert.equal(duplicateDoc(index, 'D31').status, 'pass');
-  assert.match(duplicateDoc(index, 'D31').detail, /superseded/);
-});
-
-test('mileage log page 3 is a second scan of page 2', () => {
-  assert.equal(duplicatePage(index, 'D23', 3).status, 'warn');
-  assert.equal(duplicatePage(index, 'D23', 1).status, 'pass');
-});
-
 test('SchC.44a (business miles) is flagged because of the duplicate page', () => {
   const checks = claimChecks(index, traceClaim(index, 'SchC.44a'));
   assert.ok(checks.some((c) => c.id === 'duppage' && c.status === 'warn'));
-});
-
-test('the childcare provider ID misread is caught (ev-1045)', () => {
-  assert.equal(printedMatch(index, index.values.get('ev-1045')).status, 'fail');
-});
-
-test('a blank RSU basis recorded as 0 is flagged (ev-0498)', () => {
-  assert.equal(printedMatch(index, index.values.get('ev-0498')).status, 'warn');
-});
-
-test('the W-2 box 1 reads match the printed text', () => {
-  assert.equal(printedMatch(index, index.values.get('ev-0016')).status, 'pass');
 });
 
 test('a document with no landing explains why (D10)', () => {
   const landing = docLanding(index, 'D10');
   assert.equal(landing.keys.length, 0);
   assert.ok(landing.note.length > 0);
-});
-
-test('sign-off reopens when the value changes', () => {
-  const line = index.current.byKey.get('F1040.1a');
-  const events = [{ claim: 'F1040.1a', type: 'signoff', valueAtSignoff: 212400, by: {}, at: 'x' }];
-  assert.equal(signoffState(line, events).state, 'signed');
-  events.push({ claim: 'F1040.1a', type: 'adjust', from: 212400, to: 200000 });
-  assert.equal(effectiveValue(line, events), 200000);
-  assert.equal(signoffState(line, events).state, 'reopened');
 });
 
 test('tax effect uses the packet rate per dollar', () => {
@@ -93,32 +59,6 @@ test('SchC.44a shows the duplicate-page warning once, naming both pages and both
   assert.equal(rows.length, 1);
   assert.match(rows[0].detail, /Pages 2 and 3 of D23/);
   assert.deepEqual(rows[0].refs, ['ev-0315', 'ev-0404']);
-});
-
-test('sign-off rule: warnings and fails need a note; flagged checks need verification', () => {
-  const by = { name: 'T', role: 'Reviewer' };
-  // F1040.1a: only the "possible copy" flag, which needs Mark verified (no warning, no fail)
-  const c1 = claimChecks(index, traceClaim(index, 'F1040.1a'));
-  assert.match(signoffBlocker(c1, [], 'F1040.1a'), /Mark verified/);
-  const verified = [{ claim: 'F1040.1a', type: 'verify', check: 'dupdoc:D09:D10', by }];
-  assert.equal(signoffBlocker(c1, verified, 'F1040.1a'), null);
-  // SchC.44a: duplicate-page warning needs a note
-  const c2 = claimChecks(index, traceClaim(index, 'SchC.44a'));
-  assert.match(signoffBlocker(c2, [], 'SchC.44a'), /warning/);
-  assert.match(signoffBlocker(c2, [{ claim: 'SchC.44a', type: 'note', by, text: 'hey' }], 'SchC.44a'), /at least/);
-  assert.equal(signoffBlocker(c2, [{ claim: 'SchC.44a', type: 'note', by, text: 'Pages 2 and 3 are one sheet scanned twice.' }], 'SchC.44a'), null);
-});
-
-test('an adjusted value that no longer matches its sources gets its own warning, and the original row stays', () => {
-  const trace = traceClaim(index, 'F1040.1a');
-  const plain = claimChecks(index, trace, 212400);
-  assert.ok(!plain.some((c) => c.id === 'tieAdjusted'));
-  const adjusted = claimChecks(index, trace, 200000);
-  assert.equal(adjusted.find((c) => c.id === 'tie').status, 'pass'); // original result still visible
-  const row = adjusted.find((c) => c.id === 'tieAdjusted');
-  assert.equal(row.status, 'warn');
-  assert.match(row.detail, /no longer matches its sources/);
-  assert.match(signoffBlocker(adjusted, [{ claim: 'F1040.1a', type: 'verify', check: 'dupdoc:D09:D10', by: { name: 'T', role: 'R' } }], 'F1040.1a'), /warning/);
 });
 
 test('related: last years value for the same line, and lines sharing evidence', () => {
@@ -148,17 +88,6 @@ test('questions: an answer attaches to its question, and open ones are counted',
   assert.equal(can('client', 'ask'), false);
 });
 
-test('an open review point blocks sign-off until it is cleared', () => {
-  const b = { id: 'b1', claim: 'F1040.1a', type: 'block', text: 'Source missing' };
-  assert.equal(openReviewPoints([b], 'F1040.1a').length, 1);
-  assert.match(signoffBlocker([], [b], 'F1040.1a'), /review point is still open/);
-  const c = { id: 'c1', claim: 'F1040.1a', type: 'clear', clears: 'b1' };
-  assert.equal(openReviewPoints([b, c], 'F1040.1a').length, 0);
-  assert.equal(signoffBlocker([], [b, c], 'F1040.1a'), null);
-  assert.equal(reviewPointsFor([b, c], 'F1040.1a')[0].c.id, 'c1');
-  assert.equal(signoffBlocker([], [b], 'F1040.1b'), null); // another line is not affected
-});
-
 test('the inbox lists what is waiting on a role, overdue first', () => {
   const by = { name: 'X', role: 'Reviewer' };
   const events = [
@@ -176,32 +105,6 @@ test('the inbox lists what is waiting on a role, overdue first', () => {
   assert.equal(mine[1].overdue, false);
   assert.deepEqual(inboxFor(events, 'Reviewer', '2026-10-18'), []); // review points are for the preparer to deal with
   assert.equal(assignmentsFor(events, 'D')[0].d.id, 'd3');
-});
-
-test('the return fingerprint changes when a number changes, and approval goes out of date', () => {
-  const lines = index.current.lines;
-  const f0 = returnFingerprint(lines, []);
-  assert.equal(returnFingerprint(lines, []), f0, 'same numbers, same fingerprint');
-  const key = lines.find((l) => typeof l.value === 'number').key;
-  const adjust = { id: 'a1', claim: key, type: 'adjust', to: 123456789, by: { name: 'P', role: 'Preparer' } };
-  const f1 = returnFingerprint(lines, [adjust]);
-  assert.notEqual(f1, f0);
-  const signers = signersOf(packet);
-  assert.deepEqual(signers, ['Ngozi Okafor', 'Erik Lindqvist']); // taxpayer and spouse, not the dependent
-  const present = { id: 'p1', type: 'present', claim: 'RETURN', fingerprint: f0, by: { name: 'D', role: 'Reviewer' } };
-  const ok = (name) => ({ id: `s-${name}`, type: 'approve', claim: 'RETURN', presents: 'p1', signer: name, fingerprint: f0 });
-  assert.equal(approvalState([], f0, signers).state, 'none');
-  assert.equal(approvalState([present], f0, signers).state, 'presented');
-  assert.equal(approvalState([present, ok(signers[0])], f0, signers).state, 'partly');
-  assert.deepEqual(approvalState([present, ok(signers[0])], f0, signers).missing, [signers[1]]);
-  assert.equal(approvalState([present, ok(signers[0]), ok(signers[1])], f0, signers).state, 'approved');
-  assert.equal(approvalState([present, ok(signers[0]), ok(signers[1]), adjust], f1, signers).state, 'stale'); // a number changed after signing
-  const newer = { ...present, id: 'p2', fingerprint: f1 };
-  assert.equal(approvalState([present, ok(signers[0]), newer], f1, signers).state, 'presented'); // old signatures do not carry over
-  assert.equal(allOpenReviewPoints([{ id: 'b', type: 'block' }, { id: 'c', type: 'clear', clears: 'b' }, { id: 'b2', type: 'block' }]).length, 1);
-  for (const type of ['present', 'approve']) assert.ok(EVENT_LABEL[type]);
-  assert.equal(can('client', 'approve'), true);
-  assert.equal(can('preparer', 'present'), false);
 });
 
 test('filing: the timeline merges the firm and the agencies, in order, without leaking the PINs', () => {
@@ -223,7 +126,7 @@ test('filing: the timeline merges the firm and the agencies, in order, without l
 });
 
 test('filing: the rejection is explained, resolved, and shown against the lines it concerns', () => {
-  const found = rejections(packet);
+  const found = rejections(packet, server.ssnMismatch);
   assert.equal(found.length, 1);
   assert.equal(found[0].error.code, 'R0000-504-02');
   assert.equal(found[0].resolvedBy.date.slice(0, 10), '2026-07-14');
@@ -233,34 +136,11 @@ test('filing: the rejection is explained, resolved, and shown against the lines 
   assert.notEqual(m.organizer, m.card);
   assert.equal(m.valueRef, 'ev-1080', 'the button opens the number on the card');
   assert.ok(index.values.has(m.valueRef));
-  assert.equal(maskSsn(m.card), '•••-••-3390');
-  for (const key of ['F1040.19', 'F8812.4', 'F8812.6', 'F2441.2', 'F540NR.39']) assert.equal(rejectionsForLine(packet, key).length, 1, key);
-  assert.equal(rejectionsForLine(packet, 'F1040.1a').length, 0, 'an unrelated line shows no rejection');
-  assert.equal(ssnMismatch(packet, 'nobody in the household is named here'), null);
+  assert.equal(m.card, '•••-••-3390', 'the server sends it masked');
+  assert.equal(m.organizer, '•••-••-3309');
+  for (const key of ['F1040.19', 'F8812.4', 'F8812.6', 'F2441.2', 'F540NR.39']) assert.equal(rejectionsForLine(packet, key, server.ssnMismatch).length, 1, key);
+  assert.equal(rejectionsForLine(packet, 'F1040.1a', server.ssnMismatch).length, 0, 'an unrelated line shows no rejection');
   for (const key of ['F1040.19', 'F8812.4', 'F8812.6', 'F2441.2', 'F540NR.39']) assert.ok(index.current.byKey.has(key), `${key} exists in the current return`);
-});
-
-test('masking: SSNs, PINs and bank numbers are hidden in records, on a copy', () => {
-  const theo = packet.household.people.find((p) => p.id === 'theo');
-  const before = JSON.stringify(theo);
-  const masked = maskDeep(theo);
-  assert.equal(masked.ssn, '•••-••-3309');
-  assert.equal(masked.name, theo.name, 'ordinary fields are untouched');
-  assert.equal(JSON.stringify(theo), before, 'the packet itself is not changed');
-  const bank = maskDeep(packet.household.bank_account_for_refund_or_payment);
-  assert.ok(bank.account.endsWith('9276') && !bank.account.includes('4483'), 'account keeps its last four only');
-  assert.ok(bank.routing.endsWith('0017') && !bank.routing.includes('9900'), 'routing keeps its last four only');
-  assert.equal(maskDeep(packet.household.people[0]).ip_pin, '••••••', 'a PIN keeps no digits at all');
-  const signed = packet.timeline.find((e) => e.event === 'client_approved_and_signed_8879');
-  assert.ok(!maskDeep(signed).detail.match(/41207|88310/), 'PINs written inside a sentence are hidden');
-  assert.equal(maskText('SSN 666-41-2287 PIN 123456'), 'SSN •••-••-2287 PIN ••••••');
-  assert.equal(maskNumber('abc'), '•••');
-  assert.equal(hasSecrets(theo), true);
-  assert.equal(hasSecrets({ name: 'No secrets here', amount: 5 }), false);
-  // nothing in the household, agency or timeline records can leak a full SSN once masked
-  for (const section of ['household', 'prior_years', 'tax_agency_records', 'timeline']) {
-    assert.ok(!JSON.stringify(maskDeep(packet[section])).match(/\b\d{3}-\d{2}-\d{4}\b/), `${section} has no full SSN after masking`);
-  }
 });
 
 test('masking: who may reveal sensitive numbers', () => {
@@ -278,7 +158,7 @@ test('masking: who may reveal sensitive numbers', () => {
 test('freeze at filing: the snapshot keeps the filed numbers; amendments sit on top', () => {
   const lines = index.current.lines;
   const key = lines.find((l) => typeof l.value === 'number').key;
-  const fp = returnFingerprint(lines, []);
+  const fp = 'abc';
   const file = { id: 'f1', type: 'file', claim: 'RETURN', fingerprint: fp, snapshot: snapshotOf(lines, []), by: { name: 'H', role: 'Partner' } };
   assert.equal(filedEvent([]), undefined);
   assert.equal(filedEvent([file]).id, 'f1');
@@ -288,10 +168,6 @@ test('freeze at filing: the snapshot keeps the filed numbers; amendments sit on 
   assert.equal(effectiveValue(line, [file, amend]), 424242, 'the amendment is the number now');
   assert.equal(filedValue([file, amend], key), line.value, 'the filed number is untouched');
   assert.equal(amendmentsOf([file, amend]).length, 1);
-  assert.notEqual(returnFingerprint(lines, [file, amend]), file.fingerprint, 'the return now differs from what was filed');
-  assert.match(signoffBlocker([], [file], key), /filed and frozen/);
-  assert.equal(signoffBlocker([], [file, amend], key), null);
-  assert.equal(signoffState(line, [file, amend, { type: 'signoff', claim: key, valueAtSignoff: line.value, by: {} }]).state, 'reopened');
   for (const type of ['file', 'amend']) assert.ok(EVENT_LABEL[type]);
   assert.equal(can('partner', 'file'), true);
   assert.equal(can('reviewer', 'file'), false);
@@ -320,81 +196,10 @@ test('nothing in frontend/src draws text with innerHTML or similar', () => {
   for (const file of files) assert.ok(!banned.test(readFileSync(file, 'utf8')), `${file.pathname} must not use ${banned}`);
 });
 
-// ---- Block 13: cross-checks against the agencies and documents ----
-import { crossChecks, crossChecksFor, parseDated, incomeByCategory } from '../src/crosschecks.js';
-const byId = (id) => crossChecks(index).find((c) => c.id === id);
-
-test('estimated payments: 13,000 claimed against 12,000 at the IRS (the 2026-01 payment is 4,000 vs 3,000)', () => {
-  const c = byId('pay-fed');
-  assert.equal(c.status, 'fail');
-  assert.equal(c.said, '13,000'); assert.equal(c.other, '12,000');
-  assert.match(c.detail, /2026-01-14: 4,000 claimed, 3,000 at the IRS on 2026-01-15/);
-  assert.equal(worst(claimChecks(index, traceClaim(index, 'F1040.26'))), 'fail');
-});
-
-test('California estimated payments: 14,000 claimed, 10,500 at the FTB; the 2025-09-15 payment was held for 2024', () => {
-  const c = byId('pay-ca');
-  assert.equal(c.status, 'fail');
-  assert.equal(c.other, '10,500');
-  assert.match(c.detail, /2025-09-15: 3,500 claimed, but the Franchise Tax Board holds it as/);
-});
-
-test('the Subaru gift: 6,000 deducted, 2,900 sale price on Form 1098-C', () => {
-  const c = byId('vehicle-F8283.A1.vehicle');
-  assert.equal(c.status, 'fail');
-  assert.equal(c.said, '6,000'); assert.equal(c.other, '2,900');
-  assert.deepEqual(c.refs, ['ev-1054']);
-  assert.ok(crossChecksFor(index, 'F8283.A1.vehicle').some((x) => x.status === 'fail'));
-});
-
-test('Theo’s Social Security number: the card (D71) ends 3390, the household record 3309; only last four digits are shown', () => {
-  const c = byId('ssn-theo');
-  assert.equal(c.status, 'fail');
-  assert.equal(c.said, 'ends 3309'); assert.equal(c.other, 'ends 3390');
-  assert.match(c.detail, /swapped/);
-  assert.ok(!/666-74/.test(c.detail), 'the full number must not appear');
-  assert.ok(c.lines.includes('F8812.4'));
-});
-
-test('California wages: 218,400 on the line, but the move (2025-07-15) and the paystub support 129,569', () => {
-  const c = byId('ca-wages');
-  assert.equal(c.status, 'fail');
-  assert.equal(c.said, '218,400'); assert.equal(c.other, '129,569');
-  assert.match(c.detail, /Corvane Systems, Inc.: 107,100 in full \(the job ended 2025-05-16/);
-  assert.match(c.detail, /Halvorsen Data LLC: 22,469 from the paystub \(D73\)/);
-  assert.equal(worst(claimChecks(index, traceClaim(index, 'SchCA540NR.1.E'))), 'fail');
-});
-
-test('SE health insurance: 14,400 deducted, but qa-25 and the W-2 dates show 12 of 12 months of employer coverage', () => {
-  const c = byId('se-health');
-  assert.equal(c.status, 'fail');
-  assert.equal(c.said, '14,400'); assert.equal(c.other, '0');
-  assert.match(c.detail, /Corvane Systems, Inc. \(Jan–May\), Halvorsen Data LLC \(Jun–Dec\)/);
-  assert.match(c.detail, /12 of 12 months/);
-  assert.deepEqual(c.refs, ['ev-0484']);
-});
-
-test('a cross-check that agrees passes (made-up matching figures)', () => {
-  const ok = parseDated('2025-04-15 3,000.00; 2025-06-16 3,000.00');
-  assert.deepEqual(ok, [{ date: '2025-04-15', amount: 3000 }, { date: '2025-06-16', amount: 3000 }]);
-});
-
-test('Cal1: the four pairs agree, and each Form 8949 box adds up', () => {
-  for (const id of ['rec-capgain', 'rec-interest', 'rec-dividends', 'rec-adjust', 'rec-8949']) assert.equal(byId(id).status, 'pass', id);
-  assert.equal(byId('rec-capgain').detail, 'SchD.16 (185,027) and F1040.7 (185,027) agree.');
-});
-
-test('Cal4: income categories add up to the federal, California-law and California totals', () => {
-  const rows = incomeByCategory(index);
-  assert.ok(rows.length > 0);
-  for (const id of ['rec-state-fed', 'rec-state-law', 'rec-state-ca']) assert.equal(byId(id).status, 'pass', id);
-  assert.match(byId('rec-state-ca').detail, /324,260/);
-});
-
 // Summary over every claim with evidence, so you can see what the checks find overall.
 const tally = { fail: 0, warn: 0, pass: 0, na: 0 };
 for (const line of index.current.lines) {
   if (!line.sources?.length) continue;
-  tally[worst(claimChecks(index, traceClaim(index, line.key)))] += 1;
+  tally[server.claims[line.key].worst] += 1;
 }
 console.log(`\n${passed} tests passed. Claims with evidence by worst check:`, tally);

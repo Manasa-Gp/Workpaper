@@ -76,6 +76,7 @@ export function salesDetail(state) {
         columns: [{ label: 'Line' }, { label: 'Sale' }, { label: 'Gain or loss', num: true }],
         rows: biggest.map((l) => [link(l.key), l.label, valueOf(ctx, l)]),
       },
+      lineTable(ctx, 'All sales on Form 8949', (l) => l.rule === 'R-8949-LOT' && typeof valueOf(ctx, l) === 'number', { note: true }),
       lineTable(ctx, 'Schedule D', (l) => l.form === 'SchD', {}),
     ],
   };

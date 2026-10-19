@@ -1,7 +1,7 @@
 // views/approval.js — the whole return's approval: present it, the client approves and e-signs it.
 //
 // Called by: views/picker.js (left column, under "My work").
-// Reads:     approvalState() and returnFingerprint() (events.js), roles.js.
+// Reads:     approvalFor() (serverchecks.js: the server works out the fingerprint and approval state), roles.js.
 // Calls back: on.add(event) to save a 'present' or 'approve' event (key RETURN).
 //
 // The rule that matters: the client signs a fingerprint of every number. If any number changes after
@@ -9,7 +9,8 @@
 
 import { h } from '../dom.js';
 import { actor, can, WHY_NOT } from '../roles.js';
-import { allOpenReviewPoints, amendmentsOf, approvalState, filedEvent, newEvent, returnFingerprint, signersOf, snapshotOf, RETURN_KEY } from '../events.js';
+import { allOpenReviewPoints, amendmentsOf, filedEvent, newEvent, snapshotOf, RETURN_KEY } from '../events.js';
+import { approvalFor } from '../serverchecks.js';
 import { dayTime } from '../format.js';
 
 const WORDS = {
@@ -22,9 +23,8 @@ const WORDS = {
 
 export function approval(state, on) {
   const who = actor(state.index.packet, state.role);
-  const signers = signersOf(state.index.packet);
-  const fingerprint = returnFingerprint(state.index.current.lines, state.events);
-  const now = approvalState(state.events, fingerprint, signers);
+  const now = approvalFor(state); // the server works out the fingerprint and where the approval stands
+  const { signers, fingerprint } = now;
   const open = allOpenReviewPoints(state.events).length;
 
   // Once the Partner has marked the return filed it is frozen: nothing to present, sign or adjust any more.
@@ -54,7 +54,8 @@ export function approval(state, on) {
     onClick: () => on.add(newEvent({ claim: RETURN_KEY, type: 'present', by: { name: who.name, role: who.role }, fingerprint, text: 'Presented the return for approval.' })),
   }, now.state === 'none' ? 'Present for approval' : 'Present again');
   let blocked = null;
-  if (open) blocked = `${open} review point${open === 1 ? ' is' : 's are'} still open.`;
+  if (!fingerprint) blocked = 'The server did not send the return fingerprint. Restart the server and reload.';
+  else if (open) blocked = `${open} review point${open === 1 ? ' is' : 's are'} still open.`;
   else if (now.state === 'presented' || now.state === 'partly' || now.state === 'approved') blocked = 'Already presented at these numbers.';
   if (!can(state.role, 'present')) { present.setAttribute('disabled', ''); present.setAttribute('title', WHY_NOT.present); }
   else if (blocked) { present.setAttribute('disabled', ''); present.setAttribute('title', blocked); }

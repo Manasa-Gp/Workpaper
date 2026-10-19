@@ -24,7 +24,7 @@ export function buildBatch(state, kind, text, who) {
     const trace = traceClaim(state.index, key);
     const line = trace?.line;
     if (!line) { skipped += 1; continue; }
-    const waiting = checksFor(state, trace, effectiveValue(line, state.events))
+    const waiting = checksFor(state, trace)
       .filter((c) => c.verify && !verifiedEvent(state.events, key, c.verifyKey));
     if (!waiting.length) { skipped += 1; continue; }
     for (const c of waiting) events.push(newEvent({ claim: key, type: 'verify', batch: id, check: c.verifyKey, by, text: 'Confirmed the copy is counted once.' }));

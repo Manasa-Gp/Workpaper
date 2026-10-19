@@ -1,10 +1,8 @@
-"""checks.py - the server's own copy of the data checks and the sign-off blocker.
+"""checks.py - ALL the data checks and the sign-off blocker. The server is the only place these rules live.
 
-The browser shows these checks (frontend/src/checks.js and crosschecks.js). They only protect people who
-use the page, so the server runs the same rules before it accepts a 'signoff' event.
-
-Keep this file in step with those two files. backend/test_parity.py runs both and compares every line,
-so a change made in only one place shows up as a failing test.
+GET /api/checks (server.py) sends the results; the page only displays them. The same rules run again before
+the server accepts a 'signoff' event, so they cannot be skipped by using another tool.
+Tests: backend/test_checks.py (what each check finds in the real packet) and backend/test_rules.py.
 
 Everything here reads the packet only. Nothing is saved.
 """
@@ -314,7 +312,7 @@ def claim_checks(index, trace, adjusted=None):
     return [_resolve_duplicate(c, trace, checks[0]) for c in checks]
 
 
-# ---------- cross-checks (frontend/src/crosschecks.js) ----------
+# ---------- cross-checks against agencies and documents ----------
 
 def _day_gap(a, b):
     return abs((date.fromisoformat(a) - date.fromisoformat(b)).days)
@@ -360,7 +358,7 @@ def _payment_check(cid, label, line, agency, who, as_of, held=()):
     if not line or not is_num(line["value"]):
         return None
     total = sum(p["amount"] for p in agency)
-    base = {"id": cid, "label": label, "lines": [line["key"]], "refs": []}
+    base = {"id": cid, "label": label, "lines": [line["key"]], "refs": [], "said": fmt(line["value"]), "other": fmt(total)}
     if abs(line["value"] - total) < 0.5:
         return {**base, "status": "pass", "detail": f"The return claims {fmt(line['value'])} and {who} shows {fmt(total)} (as of {as_of}). They agree."}
     why = _payment_differences(parse_dated(line.get("note")), agency, who, list(held))
@@ -397,7 +395,7 @@ def _vehicle_checks(index):
             proceeds = next((v for v in index.values_by_doc.get(doc, []) if v["field"] == "box4c" and is_num(v["value"])), None) if doc else None
             if not proceeds:
                 continue
-            base = {"id": f"vehicle-{line['key']}", "label": "Vehicle gift against the charity’s Form 1098-C", "lines": [line["key"]], "refs": [proceeds["id"]]}
+            base = {"id": f"vehicle-{line['key']}", "label": "Vehicle gift against the charity’s Form 1098-C", "lines": [line["key"]], "refs": [proceeds["id"]], "said": fmt(line["value"]), "other": fmt(proceeds["value"])}
             if line["value"] > proceeds["value"]:
                 out.append({**base, "status": "fail", "detail": f"The return deducts {fmt(line['value'])}. {doc} (Form 1098-C) says the charity sold the vehicle for {fmt(proceeds['value'])} (box 4c). When the charity sells it without using it, the deduction is generally limited to the sale price."})
             else:
@@ -422,7 +420,7 @@ def _ssn_checks(index):
         first = person["name"].split(" ")[0]
         a, b = _digits(person["ssn"]), _digits(card["value"])
         lines = [l["key"] for l in index.current["lines"] if f"household:{person['id']}" in (l.get("sources") or [])]
-        base = {"id": f"ssn-{person['id']}", "label": f"{first}’s Social Security number matches the card", "lines": lines, "refs": [card["id"]]}
+        base = {"id": f"ssn-{person['id']}", "label": f"{first}’s Social Security number matches the card", "lines": lines, "refs": [card["id"]], "said": f"ends {a[-4:]}", "other": f"ends {b[-4:]}"}
         if a == b:
             out.append({**base, "status": "pass", "detail": f"{first}’s number in the household record and on the card ({card['document_id']}) agree (both end {a[-4:]})."})
         else:
@@ -470,7 +468,7 @@ def _california_wages(index):
             supported += w["value"]
             unchecked = True
             parts.append(f"{doc['issuer']}: {fmt(w['value'])}, with no paystub to check the move against.")
-    base = {"id": "ca-wages", "label": "California wages fit the move date and the paystub", "lines": [line["key"]], "refs": refs}
+    base = {"id": "ca-wages", "label": "California wages fit the move date and the paystub", "lines": [line["key"]], "refs": refs, "said": fmt(line["value"]), "other": fmt(supported)}
     joined = " ".join(parts)
     if abs(line["value"] - supported) < 0.5:
         return {**base, "status": "pass", "detail": f"California wages of {fmt(line['value'])} agree with the move date ({move['from']}) and the paystubs. {joined}"}
@@ -501,13 +499,13 @@ def _se_health(index):
         jobs.append({"id": d["id"], "text": f"{d['issuer']} ({MONTHS[start - 1]}–{MONTHS[end - 1]})"})
     free = 12 - len(eligible)
     allowed = monthly * free if monthly is not None else None
-    base = {"id": "se-health", "label": "Self-employed health insurance against the employer-coverage answer (qa-25)", "lines": [line["key"]], "refs": (line.get("sources") or [])[:1]}
+    base = {"id": "se-health", "label": "Self-employed health insurance against the employer-coverage answer (qa-25)", "lines": [line["key"]], "refs": (line.get("sources") or [])[:1], "said": fmt(line["value"]), "other": "unknown" if allowed is None else fmt(allowed)}
     if allowed is None or line["value"] <= allowed + 0.5:
         return {**base, "status": "pass", "detail": f"The deduction of {fmt(line['value'])} is no more than the months without employer coverage allow."}
     return {**base, "status": "fail", "detail": f"The return deducts {fmt(line['value'])} ({fmt(monthly)} a month for 12 months). In qa-25 the client says Erik could have joined a family plan through Ngozi’s employers: {', '.join(j['text'] for j in jobs)}. That is {len(eligible)} of 12 months of eligibility, and the deduction is generally not allowed for those months, which leaves {fmt(allowed)}. Ask the client whether those plans were employer-subsidized."}
 
 
-# Cal1 and Cal4 (frontend/src/crosschecks.js: PAIRS, form8949Check, incomeByCategory, stateChecks)
+# Cal1 (figures that should agree) and Cal4 (income split between states)
 
 PAIRS = [
     ("rec-capgain", "Capital gain agrees between Schedule D and Form 1040", "SchD.16", "F1040.7"),
@@ -518,7 +516,7 @@ PAIRS = [
 
 
 def _compare_two(cid, label, a, b):
-    base = {"id": cid, "label": label, "lines": [a["key"], b["key"]], "refs": []}
+    base = {"id": cid, "label": label, "group": "reconcile", "lines": [a["key"], b["key"]], "refs": [], "said": fmt(a["value"]), "other": fmt(b["value"])}
     if abs(a["value"] - b["value"]) < 0.5:
         return {**base, "status": "pass", "detail": f"{a['key']} ({fmt(a['value'])}) and {b['key']} ({fmt(b['value'])}) agree."}
     return {**base, "status": "fail", "detail": f"{a['key']} says {fmt(a['value'])} but {b['key']} says {fmt(b['value'])}, a difference of {fmt(abs(a['value'] - b['value']))}."}
@@ -546,7 +544,7 @@ def _form_8949_check(index):
         keys.append(total["key"])
         if not is_num(total["value"]) or abs(added - total["value"]) >= 0.5:
             off.append(f"box {box}: {len(lots)} lots add to {fmt(added)}, the total line says {fmt(total['value']) if is_num(total['value']) else 'nothing'}")
-    base = {"id": "rec-8949", "label": "Form 8949 lots add up to each box total", "lines": keys, "refs": []}
+    base = {"id": "rec-8949", "label": "Form 8949 lots add up to each box total", "group": "reconcile", "lines": keys, "refs": [], "said": f"{len(boxes)} box totals", "other": f"{len(off)} differ" if off else "all agree"}
     if off:
         return {**base, "status": "fail", "detail": "; ".join(off) + "."}
     return {**base, "status": "pass", "detail": f"The lots in each of the {len(boxes)} boxes ({', '.join(boxes)}) add up to that box's total line."}
@@ -580,7 +578,7 @@ def _state_checks(index):
         if not rows or not total or not is_num(total["value"]):
             continue
         added = round2(sum(r[col] for r in rows))
-        base = {"id": cid, "label": label, "lines": [total_key], "refs": []}
+        base = {"id": cid, "label": label, "group": "state", "lines": [total_key], "refs": [], "said": fmt(added), "other": fmt(total["value"])}
         if abs(added - total["value"]) < 0.5:
             out.append({**base, "status": "pass", "detail": f"The {len(rows)} income categories add up to {fmt(added)}, the same as {total_key}."})
         else:
@@ -588,9 +586,114 @@ def _state_checks(index):
     return out
 
 
+# Cal3: from the studio's books to taxable income
+
+# (books lines, Schedule C line, why the two can differ). Empty line key = the books expense has no line on Schedule C.
+BOOKS_MAP = [
+    (["Advertising"], "SchC.8", ""),
+    (["Car and truck - fuel"], "SchC.9", "The return uses the standard mileage rate instead of the fuel actually bought."),
+    (["Contract labor"], "SchC.11", ""),
+    (["Depreciation"], "SchC.13", "Tax depreciation (including section 179) is worked out separately from the books' straight-line figure."),
+    (["Insurance - business liability"], "SchC.15", ""),
+    (["Insurance - health (Erik)"], None, "Self-employed health insurance is not a Schedule C expense. It is deducted on Schedule 1 (line 17) instead."),
+    (["Internet", "Telephone"], "SchC.25", ""),
+    (["Legal and professional"], "SchC.17", ""),
+    (["Meals"], "SchC.24b", "Only 50% of business meals is deductible."),
+    (["Office expenses"], "SchC.18", ""),
+    (["Software and subscriptions"], "SchC.27a.1", ""),
+    (["Supplies"], "SchC.22", ""),
+    (["Travel"], "SchC.24a", ""),
+    (["Bank and merchant fees"], "SchC.27a.2", ""),
+]
+
+
+def _books(index):
+    doc = next((d for d in index.packet["documents"] if d.get("document_type") == "books_profit_loss"), None)
+    if not doc:
+        return None
+    vals = {v["field"]: v for v in index.values_by_doc.get(doc["id"], []) if is_num(v["value"])}
+    return doc, vals
+
+
+def books_bridge(index):
+    """Rows from the books' net income to taxable income, and the checks that the steps add up.
+    Each row: {label, amount, running, why, lines, refs}. `amount` is None for a starting figure."""
+    found = _books(index)
+    net_line, receipts = index.by_key.get("SchC.31"), index.by_key.get("SchC.1")
+    if not found or not net_line or not receipts or "net_income" not in found[1]:
+        return None
+    doc, vals = found
+    refs = lambda *ids: [i for i in ids if i]
+    books_net = vals["net_income"]["value"]
+    rows = [{"label": "Net income in the books", "amount": None, "running": books_net, "why": f"{doc['id']}, cash basis profit and loss.", "lines": [], "refs": refs(vals["net_income"]["id"])}]
+    running = books_net
+    unknown = []
+
+    def step(label, amount, why, lines, rrefs):
+        nonlocal running
+        amount = round2(amount)
+        if abs(amount) < 0.5:
+            return
+        running = round2(running + amount)
+        rows.append({"label": label, "amount": amount, "running": running, "why": why, "lines": lines, "refs": rrefs})
+
+    sales = [v for f, v in vals.items() if f.startswith("Sales")]
+    books_income = vals["total_income"]["value"] if "total_income" in vals else sum(v["value"] for v in sales)
+    step("Income reported that is not in the books", receipts["value"] - books_income,
+         receipts.get("note") or "Gross receipts differ from the books' total income.", ["SchC.1"], refs(*[v["id"] for v in sales][:1]))
+    used = {"net_income", "total_income", "total_expenses"} | {v["field"] for v in sales}
+    for names, key, why in BOOKS_MAP:
+        have = [vals[n] for n in names if n in vals]
+        used.update(names)
+        books_amt = sum(v["value"] for v in have)
+        tax_line = index.by_key.get(key) if key else None
+        tax_amt = tax_line["value"] if tax_line and is_num(tax_line["value"]) else 0
+        step(f"{' and '.join(names)}: {fmt(books_amt)} in the books, {fmt(tax_amt)} on the return" if tax_line or have else "", books_amt - tax_amt,
+             (tax_line or {}).get("note") or why or "Different from the books.", [key] if key else ["Sch1.17"] if "health" in names[0] else [], refs(*[v["id"] for v in have][:1]))
+    home = index.by_key.get("SchC.30")
+    if home and is_num(home["value"]):
+        step(f"Home office deduction: {fmt(home['value'])}, not in the books", -home["value"], "The simplified home office method has no books entry.", ["SchC.30"], [])
+    for field, v in vals.items():
+        if field not in used:
+            unknown.append(field)
+    unexplained = round2(net_line["value"] - running)
+    rows.append({"label": "Net profit on Schedule C", "amount": None, "running": net_line["value"], "why": "Schedule C line 31.", "lines": ["SchC.31"], "refs": []})
+    chain = []
+    total, adj, agi, ded, tax = (index.by_key.get(k) for k in ("F1040.9", "F1040.10", "F1040.11", "F1040.14", "F1040.15"))
+    biz = index.by_key.get("Sch1.3")
+    if all(x and is_num(x["value"]) for x in (total, adj, agi, ded, tax, biz)):
+        rows.append({"label": "Business income carried to Schedule 1", "amount": None, "running": biz["value"], "why": "Schedule 1 line 3.", "lines": ["Sch1.3"], "refs": []})
+        rows.append({"label": "All other income on the return", "amount": round2(total["value"] - biz["value"]), "running": total["value"], "why": "Wages, interest, dividends, sales, rentals and the rest, to total income.", "lines": ["F1040.9"], "refs": []})
+        rows.append({"label": "Adjustments to income", "amount": -adj["value"], "running": agi["value"], "why": "Taken off to reach adjusted gross income.", "lines": ["F1040.10", "F1040.11"], "refs": []})
+        rows.append({"label": "Deductions", "amount": -ded["value"], "running": tax["value"], "why": "Taken off to reach taxable income.", "lines": ["F1040.14", "F1040.15"], "refs": []})
+        chain = [("Schedule 1 business income equals Schedule C net profit", abs(biz["value"] - net_line["value"]) < 0.5, f"Sch1.3 is {fmt(biz['value'])} and SchC.31 is {fmt(net_line['value'])}."),
+                 ("Total income less adjustments is adjusted gross income", abs(total["value"] - adj["value"] - agi["value"]) < 0.5, f"{fmt(total['value'])} less {fmt(adj['value'])} is {fmt(total['value'] - adj['value'])}; the return says {fmt(agi['value'])}."),
+                 ("Adjusted gross income less deductions is taxable income", abs(agi["value"] - ded["value"] - tax["value"]) < 0.5, f"{fmt(agi['value'])} less {fmt(ded['value'])} is {fmt(agi['value'] - ded['value'])}; the return says {fmt(tax['value'])}.")]
+    return {"rows": rows, "unexplained": unexplained, "unknown": unknown, "chain": chain, "books_net": books_net, "net_line": net_line}
+
+
+def _books_checks(index):
+    b = books_bridge(index)
+    if not b:
+        return []
+    net = b["net_line"]
+    base = {"id": "rec-books", "label": "Books net income bridges to Schedule C net profit", "group": "reconcile", "lines": ["SchC.31"], "refs": [], "said": fmt(net["value"]), "other": fmt(net["value"] - b["unexplained"])}
+    steps = len([r for r in b["rows"] if r["amount"] is not None and r["label"] != "All other income on the return"]) 
+    extra = f" The books also list {', '.join(b['unknown'])}, which no step covers." if b["unknown"] else ""
+    if abs(b["unexplained"]) < 0.5 and not b["unknown"]:
+        out = [{**base, "status": "pass", "detail": f"From {fmt(b['books_net'])} in the books, the listed differences lead exactly to {fmt(net['value'])} on Schedule C line 31."}]
+    else:
+        out = [{**base, "status": "fail", "detail": f"From {fmt(b['books_net'])} in the books, the listed differences lead to {fmt(net['value'] - b['unexplained'])}, but Schedule C line 31 says {fmt(net['value'])}: {fmt(abs(b['unexplained']))} is unexplained.{extra}"}]
+    bad = [f"{label}: {detail}" for label, ok, detail in b["chain"] if not ok]
+    if b["chain"]:
+        tb = {"id": "rec-taxable", "label": "Schedule C profit carries through to taxable income", "group": "reconcile", "lines": ["Sch1.3", "F1040.11", "F1040.15"], "refs": [], "said": "3 steps", "other": f"{len(bad)} differ" if bad else "all agree"}
+        out.append({**tb, "status": "fail", "detail": " ".join(bad)} if bad else {**tb, "status": "pass", "detail": "Schedule 1 business income equals Schedule C net profit, total income less adjustments is adjusted gross income, and that less deductions is taxable income."})
+    return out
+
+
 def cross_checks(index):
     if index._cross is None:
-        index._cross = [c for c in [*_payment_checks(index), *_vehicle_checks(index), *_ssn_checks(index), _california_wages(index), _se_health(index), *_pair_checks(index), _form_8949_check(index), *_state_checks(index)] if c]
+        index._cross = [c for c in [*_payment_checks(index), *_vehicle_checks(index), *_ssn_checks(index), _california_wages(index), _se_health(index), *_pair_checks(index), _form_8949_check(index), *_state_checks(index), *_books_checks(index)] if c]
     return index._cross
 
 
@@ -626,7 +729,172 @@ def signoff_check_problem(events, claim):
     return None
 
 
+# ---------- a rejection that names a person: do their Social Security numbers agree? ----------
+
+_SSN = re.compile(r"\d{3}-\d{2}-\d{4}")
+
+
+def _is_swap(a, b):
+    x, y = re.sub(r"\D", "", a), re.sub(r"\D", "", b)
+    if len(x) != len(y):
+        return False
+    diff = [i for i, ch in enumerate(x) if ch != y[i]]
+    return len(diff) == 2 and diff[1] == diff[0] + 1 and x[diff[0]] == y[diff[1]] and x[diff[1]] == y[diff[0]]
+
+
+def ssn_mismatch(packet, message):
+    """If the message names someone in the household, compare the number the organizer holds for them with the number
+    printed on their Social Security card. Only masked numbers leave this function. None when there is nothing to compare."""
+    from mask import mask_number
+    person = next((p for p in packet["household"]["people"] if p["name"] in message), None)
+    if not person:
+        return None
+    card = next((d for d in packet["documents"] if d.get("document_type") == "identity_document"
+                 and str(d.get("belongs_to")).endswith(f":{person['id']}") and _SSN.search(json.dumps(d.get("pages", "")))), None)
+    if not card:
+        return None
+    card_ssn = _SSN.search(json.dumps(card["pages"])).group(0)
+    if card_ssn == person.get("ssn"):
+        return None
+    value = next((v for v in packet["extracted_values"] if v["document_id"] == card["id"] and re.search("social security", str(v.get("label")), re.I)), None)
+    return {"person": person["name"], "organizer": mask_number(person["ssn"]), "card": mask_number(card_ssn), "docId": card["id"],
+            "valueRef": value["id"] if value else card["id"], "swapped": _is_swap(person["ssn"], card_ssn)}
+
+
+def ssn_mismatches(packet):
+    efile = (packet.get("tax_agency_records") or {}).get("efile") or []
+    out = {}
+    for submission in efile:
+        for error in submission.get("errors") or []:
+            found = ssn_mismatch(packet, error.get("message", ""))
+            if found:
+                out[error["message"]] = found
+    return out
+
+
+# ---------- tax effect, sign-off state, the return's fingerprint and the client's approval ----------
+
+TAX_EFFECT_CATEGORY = {"F1040.1a": "wages", "F1040.1z": "wages", "SchC.1": "schc_profit"}  # lines with an obvious rate
+
+
+def tax_effect(index, claim, delta):
+    """Estimated tax effect of changing a line by `delta` (the engine cannot be rerun: change times the packet's rate), or None."""
+    category = TAX_EFFECT_CATEGORY.get(claim)
+    rate = (index.current.get("tax_effect_rates") or {}).get(category) if category else None
+    if not rate:
+        return None
+    return {"category": category, "federal": delta * rate["federal_per_dollar"], "california": delta * rate["california_per_dollar"], "estimated": True}
+
+
+def signoff_states(index, events):
+    """For every line that has a sign-off: {state: 'signed' | 'reopened', now, last}. Lines never signed are left out."""
+    out = {}
+    for line in index.current["lines"]:
+        mine = [e for e in events if e.get("claim") == line["key"]]
+        signoffs = [e for e in mine if e.get("type") == "signoff"]
+        if not signoffs:
+            continue
+        last = signoffs[-1]
+        now = effective_value(line, events)
+        out[line["key"]] = {"state": "signed" if last.get("valueAtSignoff") == now else "reopened", "now": now,
+                            "last": {"by": last.get("by"), "at": last.get("at"), "valueAtSignoff": last.get("valueAtSignoff")}}
+    return out
+
+
+def return_fingerprint(index, events):
+    """A short fingerprint of every number on the return as it stands now (packet values plus adjustments). FNV-1a, same text for the same numbers."""
+    text = "|".join(f"{l['key']}={js_str(effective_value(l, events))}" for l in index.current["lines"] if l["value"] is not None)
+    h = 0x811C9DC5
+    for ch in map(ord, text):
+        h = ((h ^ ch) * 0x01000193) & 0xFFFFFFFF
+    return f"{h:08x}-{len(text)}"
+
+
+def approval_state(index, events):
+    """Where the return is in approval: none | presented | partly | approved | stale (numbers changed after presenting)."""
+    signers = [p["name"] for p in index.packet["household"]["people"] if p.get("role") in ("taxpayer", "spouse")]
+    fingerprint = return_fingerprint(index, events)
+    presents = [e for e in events if e.get("type") == "present"]
+    present = presents[-1] if presents else None
+    if not present:
+        return {"state": "none", "present": None, "signed": [], "missing": signers, "signers": signers, "fingerprint": fingerprint}
+    signed = [e for e in events if e.get("type") == "approve" and e.get("presents") == present.get("id")]
+    names = {e.get("signer") for e in signed}
+    missing = [n for n in signers if n not in names]
+    state = "presented"
+    if present.get("fingerprint") != fingerprint:
+        state = "stale"
+    elif not missing:
+        state = "approved"
+    elif signed:
+        state = "partly"
+    return {"state": state, "present": present, "signed": signed, "missing": missing, "signers": signers, "fingerprint": fingerprint}
+
+
+# ---------- firm standards: variance against last year, and reviewing your own work ----------
+
+def swing_note(events, key):
+    """The newest note explaining why a line moved against last year (J1), or None."""
+    notes = [e for e in events if e.get("type") == "note" and e.get("swing") and e.get("claim") == key
+             and len(str(e.get("text") or "").strip()) >= MIN_NOTE]
+    return notes[-1] if notes else None
+
+
+def variance_flags(index, events):
+    """Lines whose change against last year breaks the firm's variance rule, biggest change first."""
+    rule = index.packet["firm"]["starter_standards"]["variance_review"]
+    prior = ((index.packet.get("prior_years") or {}).get("return_2024") or {}).get("lines") or {}
+    out = []
+    for line in index.current["lines"]:
+        if not is_num(line["value"]):
+            continue
+        last = prior.get(line["key"])
+        if not is_num(last):
+            continue
+        now = effective_value(line, events)
+        if not is_num(now):
+            continue
+        change = now - last
+        pct = None if last == 0 else abs(change) / abs(last) * 100  # None = from zero
+        if abs(change) > rule["and_over_amount"] and (pct is None or pct > rule["flag_if_change_over_percent"]):
+            note = swing_note(events, line["key"])
+            out.append({"key": line["key"], "label": line["label"], "now": now, "last": last, "change": round2(change),
+                        "pct": pct, "explained": {"text": note["text"], "by": note.get("by")} if note else None})
+    return sorted(out, key=lambda f: -abs(f["change"]))
+
+
+def self_reviews(events):
+    """Sign-offs by someone who also adjusted (or amended) the same number. One row per line and person."""
+    seen, out = set(), []
+    for s in events:
+        name = (s.get("by") or {}).get("name")
+        if s.get("type") != "signoff" or not name:
+            continue
+        same = any(e.get("claim") == s.get("claim") and e.get("type") in ("adjust", "amend") and (e.get("by") or {}).get("name") == name for e in events)
+        if same and (s["claim"], name) not in seen:
+            seen.add((s["claim"], name))
+            out.append({"key": s["claim"], "name": name})
+    return out
+
+
+def variance_problem(events, claim):
+    """A sentence saying the line moved too far against last year without a written reason, or None."""
+    index = load_index()
+    if index is None:
+        return None
+    flag = next((f for f in variance_flags(index, events) if f["key"] == claim), None)
+    if flag and not flag["explained"]:
+        return (f"This number moved against last year ({fmt(flag['last'])} to {fmt(flag['now'])}), more than the firm allows without a reason. "
+                f"Write why it moved (at least {MIN_NOTE} characters) with Explain the change before signing.")
+    return None
+
+
 # ---------- everything at once, for GET /api/checks ----------
+
+def books_bridge_out(index):
+    b = books_bridge(index)
+    return {"rows": b["rows"], "unexplained": b["unexplained"], "unknown": b["unknown"]} if b else None
+
 
 _ORDER = ["fail", "warn", "pass", "na"]
 
@@ -650,4 +918,23 @@ def all_checks(events):
         trace = trace_claim(index, line["key"])
         checks = claim_checks(index, trace, effective_value(line, events))
         claims[line["key"]] = {"worst": worst(checks), "value": effective_value(line, events), "checks": checks}
-    return {"claims": claims, "cross": cross_checks(index), "income": income_by_category(index)}
+    # Only problems are sent for the document panel; anything missing from these lists is fine.
+    printed = {}
+    for vid, value in index.values.items():
+        check = printed_match(index, value)
+        if check["status"] in ("fail", "warn"):
+            printed[vid] = check
+    docs, pages = {}, {}
+    for doc_id, doc in index.documents.items():
+        check = duplicate_doc(index, doc_id)
+        if check["status"] == "warn":
+            docs[doc_id] = check
+        for page in doc["pages"]:
+            check = duplicate_page(index, doc_id, page["page"])
+            if check["status"] == "warn":
+                pages[f"{doc_id}:{page['page']}"] = check
+    return {"claims": claims, "cross": cross_checks(index), "income": income_by_category(index),
+            "printed": printed, "docs": docs, "pages": pages, "bridge": books_bridge_out(index),
+            "ssnMismatch": ssn_mismatches(index.packet),
+            "variance": variance_flags(index, events), "selfReviews": self_reviews(events),
+            "signoffs": signoff_states(index, events), "approval": approval_state(index, events)}

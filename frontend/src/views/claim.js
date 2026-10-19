@@ -16,13 +16,12 @@
 
 import { h, clear } from '../dom.js';
 import { traceClaim } from '../trace.js';
-import { rejectionsForLine, maskSsn } from '../filing.js';
-import { worst } from '../checks.js';
-import { checksFor } from '../serverchecks.js';
+import { rejectionsForLine } from '../filing.js';
+import { checksFor, signoffFor, signoffProblemFor, worst } from '../serverchecks.js';
 import { num, signed, dayTime, dueDay } from '../format.js';
-import { EVENT_LABEL, filedEvent, filedValue, effectiveValue, questionsFor, reviewPointsFor, assignmentsFor, eventsFor, verifiedEvent, signoffBlocker, signoffState, taxEffect, newEvent, needsPartner, PARTNER_OVER, DECISION_LABEL } from '../events.js';
+import { EVENT_LABEL, filedEvent, filedValue, effectiveValue, questionsFor, reviewPointsFor, assignmentsFor, eventsFor, verifiedEvent, taxEffect, newEvent, DECISION_LABEL } from '../events.js';
 import { actor, can, WHY_NOT } from '../roles.js';
-import { varianceFlags, swingNoteFor } from '../standards.js';
+import { varianceFor } from '../serverchecks.js';
 import { tryTotals } from '../batch.js';
 
 const LABEL = { pass: 'Pass', warn: 'Look at this', fail: 'Failed', na: 'Not applicable' };
@@ -37,7 +36,7 @@ export function renderClaim(el, state, on) {
   }
   const { line } = trace;
   const value = effectiveValue(line, state.events);
-  const checks = checksFor(state, trace, value); // value = the number now on screen, adjusted or not
+  const checks = checksFor(state, trace); // value = the number now on screen, adjusted or not
   const waiting = checks.filter((c) => c.verify && !verifiedBy(c, state, line)).length;
   // "pass" is only true once every check that asks for a person's confirmation has it.
   const status = worst(checks) === 'pass' && waiting ? 'warn' : worst(checks);
@@ -45,7 +44,7 @@ export function renderClaim(el, state, on) {
   const filedAt = filedValue(state.events, line.key);
   const amended = frozen && filedAt !== null && value !== filedAt;
   const adjusted = value !== line.value && !frozen;
-  const so = signoffState(line, state.events);
+  const so = signoffFor(state, line.key);
   const notes = eventsFor(state.events, line.key);
 
   el.append(
@@ -152,7 +151,7 @@ function reviewPoints(state, line, on) {
  * with the evidence that explains the fix. Nothing is saved: it is read from the packet's e-file record.
  */
 function rejectionNotice(state, line, on) {
-  const found = rejectionsForLine(state.index.packet, line.key);
+  const found = rejectionsForLine(state.index.packet, line.key, state.serverChecks?.ssnMismatch);
   if (!found.length) return '';
   return h('section', { class: 'block rejection' },
     h('h2', {}, 'E-file rejection'),
@@ -163,7 +162,7 @@ function rejectionNotice(state, line, on) {
       help.mismatch
         ? h('div', { class: 'mismatch' },
             h('p', {}, h('strong', {}, 'What went wrong')),
-            h('p', {}, `${help.mismatch.person}: the organizer has ${maskSsn(help.mismatch.organizer)}, but the Social Security card says ${maskSsn(help.mismatch.card)}`,
+            h('p', {}, `${help.mismatch.person}: the organizer has ${help.mismatch.organizer}, but the Social Security card says ${help.mismatch.card}`,
               help.mismatch.swapped ? ' (two digits swapped).' : '.'),
             h('button', { type: 'button', class: 'linkish', onClick: () => on.source(help.mismatch.valueRef) }, `Show ${help.mismatch.docId} (the card the client sent)`))
         : null,
@@ -500,12 +499,8 @@ function actions(state, line, value, checks, on) {
     },
   }, 'Adjust number'));
 
-  const alreadySigned = signoffState(line, state.events).state === 'signed';
-  const blocked = alreadySigned
-    ? 'Already signed off at this value. It can be signed again after the value changes.'
-    : needsPartner(state.events, line.key) && state.role !== 'partner'
-      ? `This adjustment has a tax effect over ${num(PARTNER_OVER)}. Only the Partner can sign it off.`
-      : signoffBlocker(checks, state.events, line.key); // a sentence saying why, or null
+  const problem = signoffProblemFor(state, line.key); // the server's own answer: a sentence, null, or undefined while it answers
+  const blocked = problem === undefined ? 'Checking the rules…' : problem;
   const signButton = gate('signoff', h('button', {
     type: 'button', class: 'btn btn-primary',
     onClick: () => {
@@ -582,8 +577,8 @@ function amendAction(state, line, value, who, gate, on) {
 function judgment(state, line, on) {
   if (!can(state.role, 'seepoints')) return ''; // internal to the firm
   const who = actor(state.index.packet, state.role);
-  const flag = varianceFlags(state.index, state.events).find((f) => f.key === line.key);
-  const explained = swingNoteFor(state.events, line.key);
+  const flag = varianceFor(state).find((f) => f.key === line.key);
+  const explained = flag?.explained ?? null; // the server says whether a reason was written
   const decisions = eventsFor(state.events, line.key).filter((e) => e.type === 'decision');
 
   // J1: a big move against last year needs a written reason

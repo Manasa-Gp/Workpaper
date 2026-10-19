@@ -6,15 +6,16 @@
 
 import { h } from '../dom.js';
 import { num } from '../format.js';
-import { selfReviews, standardsOf, varianceFlags } from '../standards.js';
+import { standardsOf } from '../standards.js';
+import { selfReviewsFor, varianceFor } from '../serverchecks.js';
 
 const SHOWN = 10;
 
 export function standards(state, on) {
   if (state.role === 'client') return null;
   const std = standardsOf(state.index.packet);
-  const swings = varianceFlags(state.index, state.events);
-  const selfs = selfReviews(state.events);
+  const swings = varianceFor(state);
+  const selfs = selfReviewsFor(state);
   const flags = swings.length + selfs.length;
   const v = std.variance_review;
 

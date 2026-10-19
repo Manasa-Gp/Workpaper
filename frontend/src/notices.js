@@ -8,8 +8,7 @@
 // we just collect the trail that already exists and put it on one page.
 
 import { traceClaim } from './trace.js';
-import { effectiveValue, eventsFor, filedEvent, filedValue, signoffState } from './events.js';
-import { maskSsn } from './filing.js';
+import { effectiveValue, eventsFor, filedEvent, filedValue } from './events.js';
 import { day, dueDay, num } from './format.js';
 
 // Which lines answer which question in a letter. A real system would match by form and line; the
@@ -25,7 +24,7 @@ export const noticesOf = (packet) => packet.tax_agency_records.notices ?? [];
 export const noticeItems = (notice) =>
   (notice.items_under_examination ?? []).map((text) => ({ text, keys: TOPICS.find((t) => t.test.test(text))?.keys ?? [] }));
 
-/** One source reference as a plain sentence. Social Security numbers are masked to the last four digits. */
+/** One source reference as a plain sentence. The server has already hidden Social Security numbers. */
 export function describeSource(s) {
   let text;
   switch (s.kind) {
@@ -48,32 +47,32 @@ export function describeSource(s) {
     case 'unread': text = `Document ${s.doc?.id ?? s.ref}, page ${s.page}: never read by the extraction`; break;
     default: text = s.ref;
   }
-  return text.replace(/\b\d{3}-\d{2}-\d{4}\b/g, (m) => maskSsn(m));
+  return text;
 }
 
 /**
  * Everything we can say about one line: value (as filed, if filed), rule, sign-off, team notes, sources,
  * and the same for the lines it is built from (one level down, which is where a gift's paperwork lives).
  */
-export function lineRecord(index, events, key, depth = 1) {
+export function lineRecord(index, events, key, depth = 1, signoffs = {}) {
   const trace = traceClaim(index, key);
   if (!trace) return null;
   const { line } = trace;
   const filed = Boolean(filedEvent(events));
   const value = filed ? (filedValue(events, key) ?? effectiveValue(line, events)) : effectiveValue(line, events);
-  const so = signoffState(line, events);
+  const so = signoffs[key] ?? { state: 'none' }; // the server says who signed
   return {
     key, label: line.label, value, rule: line.rule ?? 'none',
     signedOffBy: so.state === 'signed' ? so.last.by.name : null,
     notes: eventsFor(events, key).filter((e) => e.type === 'note' && !e.private && e.text).map((e) => ({ text: e.text, by: e.by?.name ?? '', at: e.at })),
     sources: trace.sources.map(describeSource),
-    parts: depth > 0 ? trace.inputs.map((l) => lineRecord(index, events, l.key, depth - 1)).filter(Boolean) : [],
+    parts: depth > 0 ? trace.inputs.map((l) => lineRecord(index, events, l.key, depth - 1, signoffs)).filter(Boolean) : [],
   };
 }
 
 /** The whole answer for one letter, as records (for the screen) and plain text (for copying). */
-export function noticeAnswer(index, events, notice) {
-  const items = noticeItems(notice).map((item) => ({ ...item, records: item.keys.map((k) => lineRecord(index, events, k)).filter(Boolean) }));
+export function noticeAnswer(index, events, notice, signoffs = {}) {
+  const items = noticeItems(notice).map((item) => ({ ...item, records: item.keys.map((k) => lineRecord(index, events, k, 1, signoffs)).filter(Boolean) }));
   return { notice, items, text: noticeText(notice, items) };
 }
 

@@ -19,7 +19,7 @@ export function notices(state, on) {
 }
 
 function notice(state, on, n) {
-  const answer = noticeAnswer(state.index, state.events, n);
+  const answer = noticeAnswer(state.index, state.events, n, state.serverChecks?.signoffs);
   const open = Boolean(n.items_under_examination?.length);
   return h('div', { class: 'notice-item' },
     h('p', {}, h('strong', {}, `${n.agency} ${n.type}`), ` · tax year ${n.tax_year}`),

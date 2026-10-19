@@ -3,7 +3,7 @@ from rules import signers, open_blocks, visible_events, can_read_views, can_repl
 
 
 def ev(role, kind):
-    return {"claim": "F1040.1z", "type": kind, "by": {"name": "x", "role": role}}
+    return {"claim": "F1040.1z", "type": kind, "by": {"name": f"{role} test", "role": role}}
 
 
 assert check_event(ev("Preparer", "adjust")) is None
@@ -24,7 +24,7 @@ assert check_event(so(100), []) is None                                    # fir
 assert "already signed" in check_event(so(100), [so(100)])                # same value again: refused
 assert check_event(so(120), [so(100)]) is None                            # a different value: allowed
 assert check_event(so(120), [so(100), adj()]) is None                     # number changed since: allowed
-assert check_event({**so(100), "claim": "F1040.2b"}, [so(100)]) is None   # a different line: allowed
+assert check_event({**so(100), "claim": "SchB.1.1"}, [so(100)]) is None   # a different line: allowed
 
 # the view log
 assert can_read_views("Reviewer") and can_read_views("Partner") and can_read_views("Administrator")
@@ -100,8 +100,12 @@ for role in ("Preparer", "Reviewer", "Partner"):
 for role in ("Client", "Administrator"):
     assert visible_events(work, role) == []                                        # internal to the firm
 # presenting the return and the client's approval (Form 8879)
-def pre(fp="F1", id_="p1", role="Reviewer"): return {**ev(role, "present"), "id": id_, "claim": "RETURN", "fingerprint": fp}
-def apr(signer="Ngozi Okafor", fp="F1", pid="p1", sig=None, role="Client"):
+from checks import load_index as _load, return_fingerprint as _fp
+FP = _fp(_load(), [])                                                              # the fingerprint the server works out for the return as it stands
+ADJ = {**ev("Preparer", "adjust"), "claim": "F1040.1z", "from": 100, "to": 120}    # a changed number
+FP2 = _fp(_load(), [ADJ])
+def pre(fp=FP, id_="p1", role="Reviewer"): return {**ev(role, "present"), "id": id_, "claim": "RETURN", "fingerprint": fp}
+def apr(signer="Ngozi Okafor", fp=FP, pid="p1", sig=None, role="Client"):
     return {**ev(role, "approve"), "claim": "RETURN", "presents": pid, "fingerprint": fp, "signer": signer, "signature": sig or signer}
 assert signers() == ("Ngozi Okafor", "Erik Lindqvist")                             # read from the packet: taxpayer and spouse, not the dependent
 assert check_event(pre()) is None
@@ -110,12 +114,13 @@ assert "may not" in check_event(pre(role="Client"))
 assert "fingerprint" in check_event({**pre(), "fingerprint": ""})
 assert "review point" in check_event(pre(), [blk()])                               # open review point anywhere stops it
 assert check_event(pre(), [blk(), clr()]) is None
-assert "already presented" in check_event(pre("F1", "p2"), [pre()])                # same numbers twice
-assert check_event(pre("F2", "p2"), [pre()]) is None                               # changed numbers: present again
+assert "already presented" in check_event(pre(FP, "p2"), [pre()])                # same numbers twice
+assert check_event(pre(FP2, "p2"), [pre(), ADJ]) is None                          # changed numbers: present again
+assert "does not match" in check_event(pre("made-up", "p2"), [pre()])               # the page cannot make up a fingerprint
 assert check_event(apr(), [pre()]) is None
 assert "may not" in check_event(apr(role="Reviewer"), [pre()])                     # only the client approves
 assert "not the return currently presented" in check_event(apr(), [])
-assert "not the return currently presented" in check_event(apr(pid="p1"), [pre(), pre("F2", "p2")])   # an older version
+assert "not the return currently presented" in check_event(apr(pid="p1"), [pre(), pre(FP2, "p2")])   # an older version
 assert "numbers have changed" in check_event(apr(fp="F0"), [pre()])
 assert "taxpayer or the spouse" in check_event(apr("Ada Lindqvist-Okafor"), [pre()])  # the dependent cannot sign
 assert "full name" in check_event(apr(sig="Nobody"), [pre()])
@@ -126,7 +131,7 @@ for role in ("Preparer", "Reviewer", "Partner", "Client", "Administrator"):
     assert visible_events([pre(), apr()], role) == [pre(), apr()]                  # everyone sees the return's status
 
 # ---- freeze at filing, amend on top ----
-def fil(fp="F1", pid="p1", role="Partner", snap=None):
+def fil(fp=FP, pid="p1", role="Partner", snap=None):
     return {**ev(role, "file"), "id": "f1", "claim": "RETURN", "fingerprint": fp, "presents": pid, "snapshot": snap if snap is not None else {"F1040.1a": 200, "F1040.1z": 100}}
 def amd(frm=100, to=150, text="Client sent a corrected W-2 on 3 Nov", claim="F1040.1z", role="Preparer"):
     return {**ev(role, "amend"), "claim": claim, "from": frm, "to": to, "text": text}
@@ -139,13 +144,14 @@ assert "may not" in check_event(fil(role="Preparer"), approved)
 assert "may not" in check_event(fil(role="Client"), approved)
 assert "not been presented" in check_event(fil(), [])
 assert "Not everyone has signed" in check_event(fil(), [pre(), apr()])             # the spouse has not signed
-assert "numbers have changed" in check_event(fil("F2"), approved)                  # numbers moved after approval
+assert "numbers have changed" in check_event(fil("F2"), approved)
+assert "does not match" in check_event(fil("F1"), [pre("F1"), apr(fp="F1"), apr("Erik Lindqvist", fp="F1")])   # a made-up fingerprint cannot be filed
 assert "not the version" in check_event(fil(pid="zzz"), approved)
 assert "Review points are still open" in check_event(fil(), approved + [blk()])
 assert "snapshot" in check_event(fil(snap={}), approved)
 assert "already filed" in check_event(fil(), approved + [fil()])
 filed = approved + [fil()]
-assert filed_event(filed)["fingerprint"] == "F1"
+assert filed_event(filed)["fingerprint"] == FP
 # after filing the numbers are frozen
 assert "frozen" in check_event(adj(), filed)                                       # no adjusting
 assert "frozen" in check_event(ev("Preparer", "revert"), filed)                    # no reverting
@@ -230,7 +236,7 @@ def so_for(claim, role="Reviewer"): return {**ev(role, "signoff"), "claim": clai
 def note_for(claim, text, **kw): return {**ev("Preparer", "note"), "claim": claim, "text": text, **kw}
 assert "A check failed" in check_event(so_for("F1040.26"), [])                                   # 13,000 against the IRS's 12,000
 assert "at least 15 characters" in check_event(so_for("F1040.26"), [note_for("F1040.26", "short")])
-assert check_event(so_for("F1040.26"), [note_for("F1040.26", "Client confirms the January payment was 4,000.")]) is None
+assert check_event(so_for("F1040.26"), [note_for("F1040.26", "Client confirms the January payment was 4,000.", swing=True)]) is None   # (it also moved a lot against last year, so the note doubles as the reason)
 assert check_event(so_for("F1040.26", "Partner"), []) is not None                                 # the Partner is held to the same rule
 assert "A check failed" in check_event(so_for("F1040.26"), [note_for("F1040.26", "A long enough reason to count", batch="b1"), und("b1")])  # an undone note does not count
 assert "A check" in check_event(so_for("SchCA540NR.1.E"), [])                                    # California wages (a duplicate-document warning comes first on this line)
@@ -247,5 +253,54 @@ assert worst([{"status": "na"}, {"status": "pass"}]) == "pass"
 assert worst([{"status": "pass"}, {"status": "warn"}, {"status": "fail"}]) == "fail"
 assert worst([]) == "na"
 _all = all_checks([])
-assert _all and len(_all["claims"]) > 600 and len(_all["cross"]) == 14
+assert _all and len(_all["claims"]) > 600 and len(_all["cross"]) == 16
 print("api checks ok")
+
+# firm standards: reviewing your own work, and explaining a big move against last year
+from checks import variance_flags, self_reviews, load_index, swing_note
+
+def signoff_of(claim, name="Reviewer test", role="Reviewer"): return {"claim": claim, "type": "signoff", "by": {"name": name, "role": role}, "valueAtSignoff": 1}
+def adjust_of(claim, name): return {"claim": claim, "type": "adjust", "from": 1, "to": 2, "by": {"name": name, "role": "Preparer"}}
+
+# own work: the person who adjusted a line may not sign it off
+history = [adjust_of("SchB.1.1", "Pat Preparer")]
+assert "may not review" in check_event(signoff_of("SchB.1.1", "Pat Preparer", "Partner"), history)
+assert "may not review" not in str(check_event(signoff_of("SchB.1.1", "Rae Reviewer"), history))   # someone else: the self-review rule does not apply
+assert self_reviews(history + [signoff_of("SchB.1.1", "Pat Preparer", "Partner")]) == [{"key": "SchB.1.1", "name": "Pat Preparer"}]
+
+# variance: F1040.2b went from 2,310 to 6,450 (179%, over 1,000), so it needs a written reason before sign-off
+flags = {f["key"]: f for f in variance_flags(load_index(), [])}
+assert "F1040.2b" in flags and flags["F1040.2b"]["explained"] is None and "SchB.1.1" not in flags
+assert "moved against last year" in check_event(signoff_of("F1040.2b"), [])
+short = {"claim": "F1040.2b", "type": "note", "swing": True, "text": "too short", "by": {"name": "Pat Preparer", "role": "Preparer"}}
+assert "moved against last year" in check_event(signoff_of("F1040.2b"), [short])           # a short reason does not count
+why = {**short, "text": "Interest rose because the client opened two savings accounts."}
+assert swing_note([why], "F1040.2b") is not None
+assert check_event(signoff_of("F1040.2b"), [why]) is None                                  # explained: allowed
+undone = {**why, "batch": "b1"}
+assert "moved against last year" in check_event(signoff_of("F1040.2b"), [undone, {"claim": "x", "type": "undo", "batch": "b1", "by": {"name": "Pat Preparer", "role": "Preparer"}}])
+print("standards ok")
+
+# the server works out the tax effect itself: leaving taxEffect off cannot dodge the Partner rule
+from checks import tax_effect, signoff_states, approval_state, return_fingerprint
+_i = load_index()
+big = {**ev("Preparer", "adjust"), "claim": "F1040.1z", "from": 100, "to": 100000}   # no taxEffect field at all
+assert tax_effect(_i, "F1040.1z", 99900)["federal"] > 1000 and tax_effect(_i, "F1040.2b", 5) is None
+assert "Only the Partner" in str(check_event({**ev("Reviewer", "signoff"), "claim": "F1040.1z", "valueAtSignoff": 100000}, [big]))
+tiny = {**ev("Preparer", "adjust"), "claim": "F1040.1z", "from": 100, "to": 110}
+assert "Only the Partner" not in str(check_event({**ev("Reviewer", "signoff"), "claim": "F1040.1z", "valueAtSignoff": 110}, [tiny]))
+
+# sign-off state and approval state, as the page now receives them
+line = _i.by_key["SchB.1.1"]
+signed = {"claim": "SchB.1.1", "type": "signoff", "valueAtSignoff": line["value"], "by": {"name": "Rae Reviewer", "role": "Reviewer"}}
+assert signoff_states(_i, []) == {}
+assert signoff_states(_i, [signed])["SchB.1.1"]["state"] == "signed"
+assert signoff_states(_i, [signed, {"claim": "SchB.1.1", "type": "adjust", "from": 1, "to": 2}])["SchB.1.1"]["state"] == "reopened"
+assert approval_state(_i, [])["state"] == "none"
+p1 = {**pre(), "id": "p9"}
+assert approval_state(_i, [p1])["state"] == "presented"
+assert approval_state(_i, [p1, apr(pid="p9")])["state"] == "partly" and approval_state(_i, [p1, apr(pid="p9")])["missing"] == ["Erik Lindqvist"]
+assert approval_state(_i, [p1, apr(pid="p9"), apr("Erik Lindqvist", pid="p9")])["state"] == "approved"
+assert approval_state(_i, [p1, apr(pid="p9"), apr("Erik Lindqvist", pid="p9"), ADJ])["state"] == "stale"
+assert return_fingerprint(_i, []) == return_fingerprint(_i, []) != return_fingerprint(_i, [ADJ])
+print("workflow ok")

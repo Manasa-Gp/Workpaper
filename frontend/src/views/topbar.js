@@ -58,7 +58,7 @@ export function renderTopbar(el, state, on) {
       h('label', { for: 'role-select' }, 'Acting as'),
       select,
       h('span', { class: 'role-note' }, `${who.name} ${summary}`),
-      h('span', { class: 'role-note proto' }, `Prototype: roles are enforced on this screen only, not by a server. Build: ${BUILD}`),
+      h('span', { class: 'role-note proto' }, `Prototype: the server enforces what each role may do, but there is no login, so you pick the role here. Build: ${BUILD}`),
       resetButton,
     ),
   );

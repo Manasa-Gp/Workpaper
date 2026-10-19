@@ -16,7 +16,7 @@ export function filing(state, on) {
   const packet = state.index.packet;
   const status = filingStatus(packet);
   const items = filingTimeline(packet);
-  const found = rejections(packet);
+  const found = rejections(packet, state.serverChecks?.ssnMismatch); // the server compares the numbers and sends them masked
 
   const word = (s) => (s ? { accepted: `accepted ${day(s.date)}`, rejected: 'rejected', not_transmitted: 'held' }[s.status] ?? s.status : 'not filed');
   const headline = status.allAccepted ? 'Filed' : status.federal ? 'In progress' : 'Not filed';

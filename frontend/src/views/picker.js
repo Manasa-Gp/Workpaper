@@ -12,7 +12,8 @@ import { num } from '../format.js';
 import { actor, can, WHY_NOT } from '../roles.js';
 import { lastBatch } from '../batch.js';
 import { newByKey } from '../lastvisit.js';
-import { effectiveValue, signoffState, openQuestionCount, openReviewPoints, filedEvent, filedValue } from '../events.js';
+import { signoffFor } from '../serverchecks.js';
+import { effectiveValue, openQuestionCount, openReviewPoints, filedEvent, filedValue } from '../events.js';
 import { inbox } from './inbox.js';
 import { approval } from './approval.js';
 import { activity } from './activity.js';
@@ -93,7 +94,7 @@ function row(line, state, on, fresh = 0) {
   const status = state.statusByKey.get(line.key) ?? 'na';
   const value = effectiveValue(line, state.events);
   const adjusted = value !== line.value;
-  const so = signoffState(line, state.events).state;
+  const so = signoffFor(state, line.key).state;
   const open = openQuestionCount(state.events, line.key);
   const points = openReviewPoints(state.events, line.key).length;
   return h(

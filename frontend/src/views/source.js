@@ -15,9 +15,8 @@
 import { h, clear } from '../dom.js';
 import { docLanding } from '../packetIndex.js';
 import { locatorFor, resolveSource } from '../trace.js';
-import { printedMatch, duplicateDoc, duplicatePage } from '../checks.js';
+import { printedFor, dupDocFor, dupPageFor } from '../serverchecks.js';
 import { day } from '../format.js';
-import { maskDeep, hasSecrets } from '../mask.js';
 import { recordView } from './record.js';
 import { canSeeSensitive } from '../roles.js';
 
@@ -47,16 +46,16 @@ function renderDocument(state, source, on) {
   const locator = locatorFor(value);
   const landing = docLanding(index, doc.id);
   const page = doc.pages.find((p) => p.page === locator.page);
-  const match = printedMatch(index, value);
+  const match = printedFor(state, value.id);
 
   const extraction = doc.extraction ?? {};
   const banners = [];
   if (extraction.status && extraction.status !== 'extracted') {
     banners.push(h('p', { class: 'banner warn' }, `Extraction: ${extraction.status.replace('_', ' ')}. ${extraction.reason ?? ''}`));
   }
-  const dupDoc = duplicateDoc(index, doc.id);
+  const dupDoc = dupDocFor(state, doc.id);
   if (dupDoc.status === 'warn') banners.push(h('p', { class: 'banner warn' }, dupDoc.detail));
-  const dupPage = duplicatePage(index, doc.id, locator.page);
+  const dupPage = dupPageFor(state, doc.id, locator.page);
   if (dupPage.status === 'warn') banners.push(h('p', { class: 'banner warn' }, dupPage.detail));
   if (match.status === 'fail') banners.push(h('p', { class: 'banner fail' }, `${match.detail} The closest printed text is marked in red.`));
   if (match.status === 'warn') banners.push(h('p', { class: 'banner warn' }, match.detail));
@@ -224,9 +223,10 @@ function renderRecord(source, state, on) {
     const heading = { prior: 'Last year’s record', agency: 'Tax agency record', param: 'Engine parameter', asset: 'Asset record', person: 'Household record', event: 'Timeline event' }[source.kind];
     const found = source.found ?? source.record ?? source.person ?? source.event;
     // Records can hold SSNs, PINs and bank numbers. They are hidden unless a cleared role chooses to reveal them.
-    const secret = found !== undefined && hasSecrets(found);
-    const allowed = canSeeSensitive(state.index.packet, state.role);
-    const shown = secret && allowed && state.revealed.has(source.ref);
+    const secret = found !== undefined && JSON.stringify(found).includes('•'); // the server hid numbers here
+    const allowed = canSeeSensitive(state.index.packet, state.role); // only decides whether to offer the button; the server decides what it sends
+    const real = state.revealed.get(source.ref);
+    const shown = secret && allowed && real !== undefined;
     body.push(h('h2', {}, heading), h('p', { class: 'meta-line' }, source.ref));
     if (secret) {
       body.push(h('div', { class: 'sensitive-bar' },
@@ -235,7 +235,7 @@ function renderRecord(source, state, on) {
           ? h('button', { type: 'button', class: 'btn', onClick: () => on.reveal(source.ref) }, shown ? 'Hide' : 'Reveal')
           : h('span', { class: 'muted' }, ' Your role is not cleared to see them.')));
     }
-    body.push(found === undefined ? h('p', {}, 'Nothing found at this location.') : recordView(shown || !secret ? found : maskDeep(found)));
+    body.push(found === undefined ? h('p', {}, 'Nothing found at this location.') : recordView(shown ? real : found));
   } else {
     body.push(h('h2', {}, 'Evidence'), h('p', {}, `No viewer for ${source.ref}.`));
   }

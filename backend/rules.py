@@ -16,7 +16,7 @@ from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 
-from checks import signoff_check_problem
+from checks import load_index, return_fingerprint, signoff_check_problem, tax_effect, variance_problem
 
 # role label (as written in event["by"]["role"]) -> event types that role may add
 ALLOWED = {
@@ -85,6 +85,12 @@ def check_event(event, events=()):
         problem = signoff_check_problem(counting, event.get("claim"))
         if problem:
             return problem
+        who = (event.get("by") or {}).get("name")
+        if who and any(e.get("claim") == event.get("claim") and e.get("type") in ("adjust", "amend") and (e.get("by") or {}).get("name") == who for e in counting):
+            return "A person may not review or sign off on work they prepared. Ask someone else to sign this line."
+        problem = variance_problem(counting, event.get("claim"))
+        if problem:
+            return problem
         if _already_signed(event, events):
             return "This line is already signed off at this value. It can be signed again only after the value changes."
     return None
@@ -98,10 +104,12 @@ def needs_partner(events, claim):
     changes = [e for e in events if e.get("claim") == claim and e.get("type") in ("adjust", "revert", "amend")]
     if not changes or changes[-1].get("type") != "adjust":
         return False
-    effect = changes[-1].get("taxEffect")
-    if not isinstance(effect, dict):
-        return False
-    amounts = [abs(effect[k]) for k in ("federal", "california") if _is_number(effect.get(k))]
+    last = changes[-1]
+    effects = [last.get("taxEffect")]  # what the page estimated ...
+    index = load_index()
+    if index is not None and _is_number(last.get("from")) and _is_number(last.get("to")):
+        effects.append(tax_effect(index, claim, last["to"] - last["from"]))  # ... and what the server works out itself
+    amounts = [abs(e[k]) for e in effects if isinstance(e, dict) for k in ("federal", "california") if _is_number(e.get(k))]
     return bool(amounts) and max(amounts) > PARTNER_OVER
 
 
@@ -222,6 +230,9 @@ def _check_file(event, events):
         return "That is not the version the client approved."
     if present.get("fingerprint") != fingerprint:
         return "The numbers have changed since the client approved them."
+    wrong = _fingerprint_problem(fingerprint, events)
+    if wrong:
+        return wrong
     signed = {e.get("signer") for e in events if e.get("type") == "approve" and e.get("presents") == present.get("id")}
     missing = [n for n in signers() if n not in signed]
     if missing:
@@ -261,6 +272,17 @@ def _check_amend(event, events):
     return None
 
 
+def _fingerprint_problem(fingerprint, events):
+    """The fingerprint in a present or file event must be the one the server works out from the numbers it holds."""
+    index = load_index()
+    if index is None:
+        return None
+    counting = [e for e in events if e.get("type") == "undo" or e.get("batch") not in undone_batches(events)]
+    if fingerprint != return_fingerprint(index, counting):
+        return "That fingerprint does not match the numbers on the return. Reload and try again."
+    return None
+
+
 def _check_present(event, events):
     fingerprint = event.get("fingerprint")
     if not isinstance(fingerprint, str) or not fingerprint or len(fingerprint) > 64:
@@ -268,6 +290,9 @@ def _check_present(event, events):
     points = {e.get("id") for e in events if e.get("type") == "block"} - {e.get("clears") for e in events if e.get("type") == "clear"}
     if points:
         return f"{len(points)} review point(s) are still open. Clear them before presenting the return."
+    wrong = _fingerprint_problem(fingerprint, events)
+    if wrong:
+        return wrong
     last = _latest(events, "present")
     if last is not None and last.get("fingerprint") == fingerprint:
         return "The return was already presented at these numbers."
