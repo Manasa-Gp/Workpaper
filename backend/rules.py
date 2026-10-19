@@ -18,9 +18,10 @@ from pathlib import Path
 
 # role label (as written in event["by"]["role"]) -> event types that role may add
 ALLOWED = {
-    "Preparer": {"note", "adjust", "revert", "evidence", "question", "answer", "done", "amend"},
-    "Reviewer": {"note", "evidence", "verify", "signoff", "question", "answer", "block", "clear", "assign", "done", "present"},
-    "Partner": {"note", "evidence", "verify", "signoff", "question", "answer", "block", "clear", "assign", "done", "present", "file"},
+    "Preparer": {"note", "adjust", "revert", "evidence", "question", "answer", "done", "amend", "time"},
+    "Reviewer": {"note", "evidence", "verify", "signoff", "question", "answer", "block", "clear", "assign", "done", "present", "time"},
+    "Partner": {"note", "evidence", "verify", "signoff", "question", "answer", "block", "clear", "assign", "done", "present", "file", "time"},
+    "Quality reviewer": set(),  # reads everything, changes nothing (the packet has them join on 2027-01-04)
     "Client": {"answer", "approve"},  # the client answers questions and approves/signs the return; nothing else
     "Administrator": set(),
 }
@@ -40,6 +41,8 @@ def check_event(event, events=()):
         return f"Unknown event type: {kind!r}."
     if kind not in ALLOWED[role]:
         return f"A {role} may not add a '{kind}' event."
+    if kind == "time":
+        return _check_time(event)
     if kind == "file":
         return _check_file(event, events)
     if kind == "amend":
@@ -65,10 +68,52 @@ def check_event(event, events=()):
     if kind == "signoff":
         if filed_event(events) and not any(e.get("type") == "amend" and e.get("claim") == event.get("claim") for e in events):
             return "The return is filed and frozen. Only a line that has been amended can be signed off."
+        if role != "Partner" and needs_partner(events, event.get("claim")):
+            return f"This adjustment has a tax effect over {PARTNER_OVER:,}. Only the Partner can sign it off."
         if open_blocks(events, event.get("claim")):
             return "This line has open review points. Clear them before signing off."
         if _already_signed(event, events):
             return "This line is already signed off at this value. It can be signed again only after the value changes."
+    return None
+
+
+PARTNER_OVER = 1000  # firm standard: an adjustment with a tax effect over this (federal or California) needs the Partner
+
+
+def needs_partner(events, claim):
+    """True if the line's latest change is an adjustment whose estimated tax effect is over PARTNER_OVER."""
+    changes = [e for e in events if e.get("claim") == claim and e.get("type") in ("adjust", "revert", "amend")]
+    if not changes or changes[-1].get("type") != "adjust":
+        return False
+    effect = changes[-1].get("taxEffect")
+    if not isinstance(effect, dict):
+        return False
+    amounts = [abs(effect[k]) for k in ("federal", "california") if _is_number(effect.get(k))]
+    return bool(amounts) and max(amounts) > PARTNER_OVER
+
+
+# ---- time against budget ----------------------------------------------------------------------
+# A 'time' event says how many hours someone spent on one area of the work. The areas and their
+# budgets come from the packet (firm.budget_hours), so the server refuses an area it does not know.
+
+MAX_HOURS = 24
+
+
+@lru_cache(maxsize=1)
+def budget_areas():
+    try:
+        with open(Path(__file__).resolve().parent / "data" / "packet.json", encoding="utf-8") as f:
+            return tuple(json.load(f)["firm"]["budget_hours"].keys())
+    except (OSError, ValueError, KeyError):
+        return ()
+
+
+def _check_time(event):
+    if event.get("area") not in budget_areas():
+        return "Time must be recorded against one of the budget areas."
+    hours = event.get("hours")
+    if not _is_number(hours) or not (0 < hours <= MAX_HOURS):
+        return f"Hours must be a number above 0 and at most {MAX_HOURS}."
     return None
 
 
@@ -268,7 +313,7 @@ def _already_signed(event, events):
 
 
 # who may read the view log (the record of who opened which line or document)
-VIEW_LOG_READERS = {"Reviewer", "Partner", "Administrator"}
+VIEW_LOG_READERS = {"Reviewer", "Partner", "Administrator", "Quality reviewer"}
 VIEW_KINDS = {"line", "source"}
 
 
@@ -299,8 +344,8 @@ def check_view(view):
 # A question is private to the person who asked it, the person it is for, and the Partner
 # (who signs off the whole file). Everyone else only learns that a question exists.
 
-STAFF_ONLY_KINDS = ("block", "clear", "assign", "done")  # the firm's internal working notes
-STAFF_READERS = set(STAFF_ROLES)
+STAFF_ONLY_KINDS = ("block", "clear", "assign", "done", "time")  # the firm's internal working notes
+STAFF_READERS = set(STAFF_ROLES) | {"Quality reviewer"}
 
 
 def _may_read_question(question, role):

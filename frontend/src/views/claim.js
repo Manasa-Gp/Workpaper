@@ -19,7 +19,7 @@ import { traceClaim } from '../trace.js';
 import { rejectionsForLine, maskSsn } from '../filing.js';
 import { claimChecks, worst } from '../checks.js';
 import { num, signed, dayTime, dueDay } from '../format.js';
-import { EVENT_LABEL, filedEvent, filedValue, effectiveValue, questionsFor, reviewPointsFor, assignmentsFor, eventsFor, verifiedEvent, signoffBlocker, signoffState, taxEffect, newEvent } from '../events.js';
+import { EVENT_LABEL, filedEvent, filedValue, effectiveValue, questionsFor, reviewPointsFor, assignmentsFor, eventsFor, verifiedEvent, signoffBlocker, signoffState, taxEffect, newEvent, needsPartner, PARTNER_OVER } from '../events.js';
 import { actor, can, WHY_NOT } from '../roles.js';
 
 const LABEL = { pass: 'Pass', warn: 'Look at this', fail: 'Failed', na: 'Not applicable' };
@@ -495,7 +495,9 @@ function actions(state, line, value, checks, on) {
   const alreadySigned = signoffState(line, state.events).state === 'signed';
   const blocked = alreadySigned
     ? 'Already signed off at this value. It can be signed again after the value changes.'
-    : signoffBlocker(checks, state.events, line.key); // a sentence saying why, or null
+    : needsPartner(state.events, line.key) && state.role !== 'partner'
+      ? `This adjustment has a tax effect over ${num(PARTNER_OVER)}. Only the Partner can sign it off.`
+      : signoffBlocker(checks, state.events, line.key); // a sentence saying why, or null
   const signButton = gate('signoff', h('button', {
     type: 'button', class: 'btn btn-primary',
     onClick: () => {

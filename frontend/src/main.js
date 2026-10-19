@@ -23,7 +23,7 @@ import { buildIndex } from './packetIndex.js';
 import { traceClaim } from './trace.js';
 import { claimChecks, worst } from './checks.js';
 import { loadEvents, saveEvents, appendEvent, verifiedEvent, effectiveValue } from './events.js';
-import { recordView, loadViews } from './viewlog.js';
+import { recordView, loadViews, loadAllViews } from './viewlog.js';
 import { actor, can } from './roles.js';
 import { renderTopbar } from './views/topbar.js';
 import { renderPicker } from './views/picker.js';
@@ -46,6 +46,8 @@ const state = {
   loadError: false,
   unsaved: [],
   viewsFor: null, // { key, list }: the view log of the open line, loaded for roles that may read it
+  allViews: null, // the whole view log, loaded while the "Who opened what" panel is open
+  viewLogOpen: false,
   revealed: new Set(), // records whose sensitive numbers this person chose to show (cleared when the role changes)
 };
 
@@ -68,7 +70,8 @@ const on = {
   attention(flag) { state.onlyAttention = flag; render(); },
   group(key, open) { state.groupsOpen.set(key, open); }, // remembered across redraws; no redraw needed
   passed(open) { state.passedOpen = open; }, // remembered across redraws; no redraw needed
-  role(roleKey) { state.role = roleKey; state.revealed.clear(); render(); refreshViews(); refreshEvents(); },
+  viewLog(open) { if (open === state.viewLogOpen) return; state.viewLogOpen = open; if (open) refreshAllViews(); }, // load the whole log while its panel is open
+  role(roleKey) { state.role = roleKey; state.revealed.clear(); state.allViews = null; render(); refreshViews(); refreshEvents(); if (state.viewLogOpen) refreshAllViews(); },
   reveal(ref) { // show or hide the sensitive numbers of one record; showing is recorded in the view log
     if (state.revealed.has(ref)) state.revealed.delete(ref);
     else { state.revealed.add(ref); trackView(`reveal:${ref}`, 'source'); }
@@ -234,10 +237,18 @@ async function refreshViews() {
   if (state.key === key) render();
 }
 
+/** Reload the whole view log (for the "Who opened what" panel) when this role may read it. */
+async function refreshAllViews() {
+  if (!can(state.role, 'viewlog')) { state.allViews = null; return; }
+  state.allViews = await loadAllViews(roleLabel());
+  render();
+}
+
 /** Log that the current role opened something, then (for roles that may) reload the log of the open line. */
 async function trackView(target, kind) {
   const who = actor(state.index.packet, state.role);
   await recordView(target, kind, who);
+  if (state.viewLogOpen) refreshAllViews();
   if (kind !== 'line' || state.key !== target) return;
   state.viewsFor = { key: target, list: await readViews(target) };
   if (state.key === target) render();
@@ -341,3 +352,16 @@ window.addEventListener('hashchange', () => {
 });
 
 boot();
+
+// Development only (on localhost): reload the page when a frontend file is saved or the server restarts,
+// so you never have to refresh by hand. On a real host this does nothing.
+if (['localhost', '127.0.0.1'].includes(location.hostname)) {
+  let seen = null;
+  setInterval(async () => {
+    try {
+      const { v } = await (await fetch('/api/version')).json();
+      if (seen === null) seen = v;
+      else if (v !== seen) location.reload();
+    } catch { /* the server is restarting: try again next second */ }
+  }, 1000);
+}

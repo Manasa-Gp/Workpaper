@@ -317,3 +317,16 @@ dl.record dl.record { margin: 0; padding-left: 8px; border-left: 2px solid var(-
 .count-chip.s-warn { border-color: var(--warn); }
 .count-chip.s-fail { border-color: var(--fail); }
 .count-chip.s-pass { border-color: var(--pass); }
+
+/* Time against budget (views/timebudget.js) and Who opened what (views/viewlogpage.js). */
+.time-budget, .view-log { border-bottom: 1px solid var(--line); padding: 8px 12px; }
+.time-budget > summary, .view-log > summary { cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.time-row { margin: 6px 0; }
+.time-row p { margin: 0 0 2px; }
+.time-bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+.time-bar span { display: block; height: 100%; background: var(--pass); }
+.time-bar span.over { background: var(--warn); }
+.time-over { color: var(--warn); }
+.time-form { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.time-form input { width: 6em; }
+.time-recent { margin: 4px 0; padding-left: 18px; }

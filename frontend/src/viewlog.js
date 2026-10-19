@@ -27,3 +27,13 @@ export async function loadViews(target, role) {
     return [];
   }
 }
+
+/** Every view, oldest first (the whole log). Empty if this role may not read the log or the server is down. */
+export async function loadAllViews(role) {
+  try {
+    const response = await fetch(`/api/views?${new URLSearchParams({ role })}`);
+    return response.ok ? response.json() : [];
+  } catch {
+    return [];
+  }
+}

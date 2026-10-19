@@ -4,12 +4,14 @@
 // does not have is disabled and says why. Names come from packet.firm.staff.
 
 export const ROLES = {
-  preparer: { label: 'Preparer', staffId: 'st-01', can: ['note', 'adjust', 'amend', 'evidence', 'ask', 'answer', 'seepoints', 'done'] },
+  preparer: { label: 'Preparer', staffId: 'st-01', can: ['note', 'adjust', 'amend', 'evidence', 'ask', 'answer', 'seepoints', 'done', 'time'] },
   // A second preparer the firm has NOT cleared for sensitive data (packet: Marcus Bell, st-04). Same work, but no Reveal.
-  preparer2: { label: 'Preparer', staffId: 'st-04', can: ['note', 'adjust', 'amend', 'evidence', 'ask', 'answer', 'seepoints', 'done'] },
-  reviewer: { label: 'Reviewer', staffId: 'st-02', can: ['note', 'evidence', 'ask', 'answer', 'verify', 'signoff', 'viewlog', 'block', 'clear', 'seepoints', 'assign', 'done', 'present'] },
-  partner: { label: 'Partner', staffId: 'st-03', can: ['note', 'evidence', 'ask', 'answer', 'verify', 'signoff', 'viewlog', 'block', 'clear', 'seepoints', 'assign', 'done', 'present', 'file'] },
+  preparer2: { label: 'Preparer', staffId: 'st-04', can: ['note', 'adjust', 'amend', 'evidence', 'ask', 'answer', 'seepoints', 'done', 'time'] },
+  reviewer: { label: 'Reviewer', staffId: 'st-02', can: ['note', 'evidence', 'ask', 'answer', 'verify', 'signoff', 'viewlog', 'block', 'clear', 'seepoints', 'assign', 'done', 'present', 'time'] },
+  partner: { label: 'Partner', staffId: 'st-03', can: ['note', 'evidence', 'ask', 'answer', 'verify', 'signoff', 'viewlog', 'block', 'clear', 'seepoints', 'assign', 'done', 'present', 'file', 'time'] },
   client: { label: 'Client', staffId: null, can: ['answer', 'approve'] },
+  // Joins the engagement on 2027-01-04 (packet: st-06). Reads everything staff can read, changes nothing.
+  quality: { label: 'Quality reviewer', staffId: 'st-06', can: ['viewlog'] },
   admin: { label: 'Administrator', staffId: 'st-05', can: ['reset', 'viewlog'] },
 };
 
@@ -53,4 +55,5 @@ export const WHY_NOT = {
   file: 'Only the partner marks the return as filed.',
   amend: 'Only a preparer can amend a filed number.',
   reset: 'Only the administrator can reset saved work.',
+  time: 'Only the firm’s staff can record time.',
 };

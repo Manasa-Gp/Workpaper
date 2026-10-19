@@ -111,6 +111,17 @@ export function taxEffect(version, lineKey, delta) {
   };
 }
 
+/** Firm standard: an adjustment with a tax effect over this (federal or California) must be signed off by the Partner. */
+export const PARTNER_OVER = 1000;
+
+/** True if the line's latest change is an adjustment whose estimated tax effect is over PARTNER_OVER. */
+export function needsPartner(events, claim) {
+  const last = [...events].reverse().find((e) => e.claim === claim && ['adjust', 'revert', 'amend'].includes(e.type));
+  const fx = last?.type === 'adjust' ? last.taxEffect : null;
+  if (!fx) return false;
+  return Math.max(Math.abs(fx.federal ?? 0), Math.abs(fx.california ?? 0)) > PARTNER_OVER;
+}
+
 /** Review points ('block' events) on a line that no 'clear' event has closed yet. They stop sign-off. */
 export function openReviewPoints(events, claim) {
   const cleared = new Set(events.filter((e) => e.type === 'clear').map((e) => e.clears));
@@ -169,7 +180,7 @@ export const EVENT_LABEL = {
   note: 'Note', adjust: 'Adjusted', signoff: 'Signed off', revert: 'Reverted', verify: 'Verified',
   evidence: 'Evidence added', question: 'Question', answer: 'Answer', block: 'Review point', clear: 'Review point cleared',
   assign: 'Assigned', done: 'Task done', present: 'Presented for approval', approve: 'Approved and signed',
-  file: 'Filed and frozen', amend: 'Amended after filing',
+  file: 'Filed and frozen', amend: 'Amended after filing', time: 'Time recorded',
 };
 
 // ---------- freeze at filing, amend on top ----------

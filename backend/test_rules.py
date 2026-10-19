@@ -172,3 +172,25 @@ assert check_event(sgn(170), filed + [amd(), sgn(150), amd(150, 170)]) is None  
 for role in ("Preparer", "Reviewer", "Partner", "Client", "Administrator"):
     assert [e for e in visible_events(filed + [amd()], role) if e["type"] in ("file", "amend")]   # everyone sees filed status
 print("rules ok")
+
+
+# Fm2: the Partner must sign off an adjustment with a tax effect over 1,000; the quality reviewer only reads
+def adj_fx(fed, ca=0): return {**ev("Preparer", "adjust"), "from": 100, "to": 200, "taxEffect": {"federal": fed, "california": ca}}
+assert "Partner" in check_event({**ev("Reviewer", "signoff"), "valueAtSignoff": 200}, [adj_fx(1500)])      # over 1,000: reviewer refused
+assert check_event({**ev("Partner", "signoff"), "valueAtSignoff": 200}, [adj_fx(1500)]) is None             # the Partner may
+assert check_event({**ev("Reviewer", "signoff"), "valueAtSignoff": 200}, [adj_fx(900)]) is None             # under 1,000: reviewer may
+assert "Partner" in check_event({**ev("Reviewer", "signoff"), "valueAtSignoff": 200}, [adj_fx(10, -1200)])  # California counts too
+assert check_event({**ev("Reviewer", "signoff"), "valueAtSignoff": 100}, [adj_fx(1500), ev("Preparer", "revert")]) is None  # reverted: no longer an adjustment
+assert "may not" in check_event(ev("Quality reviewer", "note"))                                             # read-only
+assert can_read_views("Quality reviewer")
+
+# Fm3: time against budget
+def tm(area, hours): return {**ev("Preparer", "time"), "area": area, "hours": hours}
+assert check_event(tm("business", 1.5)) is None
+assert "budget areas" in check_event(tm("lunch", 1))
+assert "Hours" in check_event(tm("business", 0))
+assert "Hours" in check_event(tm("business", 25))
+assert "Hours" in check_event(tm("business", "3"))
+assert "may not" in check_event({**tm("business", 1), "by": {"name": "x", "role": "Client"}})
+assert not any(e.get("type") == "time" for e in visible_events([tm("business", 1)], "Client"))
+assert any(e.get("type") == "time" for e in visible_events([tm("business", 1)], "Reviewer"))

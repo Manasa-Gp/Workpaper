@@ -24,7 +24,7 @@ export function renderTopbar(el, state, on) {
     }),
   );
 
-  const doing = Object.entries({ note: 'add notes', evidence: 'add evidence', ask: 'ask questions', answer: 'answer questions', viewlog: 'see who viewed', adjust: 'adjust numbers', amend: 'amend filed numbers', verify: 'verify flagged checks', signoff: 'sign off', block: 'raise review points', clear: 'clear review points', assign: 'assign work', present: 'present the return for approval', approve: 'approve and e-sign the return', file: 'mark the return filed' })
+  const doing = Object.entries({ note: 'add notes', evidence: 'add evidence', ask: 'ask questions', answer: 'answer questions', viewlog: 'see who viewed', adjust: 'adjust numbers', amend: 'amend filed numbers', verify: 'verify flagged checks', signoff: 'sign off', block: 'raise review points', clear: 'clear review points', assign: 'assign work', present: 'present the return for approval', approve: 'approve and e-sign the return', file: 'mark the return filed', time: 'record time' })
     .filter(([action]) => can(state.role, action))
     .map(([, text]) => text);
   const summary = state.role === 'admin' ? 'can reset saved work' : doing.length ? `can ${doing.join(', ')}` : 'can view only';
