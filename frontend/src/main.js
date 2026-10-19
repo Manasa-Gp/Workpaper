@@ -25,6 +25,8 @@ import { claimChecks, worst } from './checks.js';
 import { loadEvents, saveEvents, appendEvent, verifiedEvent, effectiveValue } from './events.js';
 import { recordView, loadViews, loadAllViews } from './viewlog.js';
 import { actor, can } from './roles.js';
+import { readSince, writeSince } from './lastvisit.js';
+import { buildBatch, lastBatch, undoEvent, withoutUndone } from './batch.js';
 import { renderTopbar } from './views/topbar.js';
 import { renderPicker } from './views/picker.js';
 import { renderClaim } from './views/claim.js';
@@ -35,6 +37,13 @@ import { h, clear } from './dom.js';
 const state = {
   index: null,
   role: 'preparer',
+  since: readSince('preparer'), // Ch1: when this role last looked (this browser only)
+  onlyNew: false,
+  tryIt: new Map(), // Ch3: what-if values (key -> number). Memory only, never saved
+  selectMode: false, // Ch4: choosing several lines
+  selected: new Set(),
+  batchMsg: '',
+  batchText: '',
   key: 'F1040.1a',
   sourceRef: null,
   events: [],
@@ -72,12 +81,42 @@ const on = {
   source(ref) { state.sourceRef = ref; render({ scrollToMark: true }); trackView(ref, 'source'); },
   filter(text) { state.filter = text; render(); },
   attention(flag) { state.onlyAttention = flag; render(); },
+  onlyNew(flag) { state.onlyNew = flag; render(); },
+  tryIt(key, value) { if (value === null) state.tryIt.delete(key); else state.tryIt.set(key, value); render(); },
+  tryClear() { state.tryIt = new Map(); render(); },
+  batchText(t) { state.batchText = t; }, // remembered across redraws; no redraw needed
+  selectMode(flag) { state.selectMode = flag; if (!flag) { state.selected = new Set(); state.batchMsg = ''; } render(); },
+  toggleSel(key) { if (state.selected.has(key)) state.selected.delete(key); else state.selected.add(key); state.batchMsg = ''; render(); },
+  selectMany(keys) { state.selected = new Set(keys); state.batchMsg = ''; render(); },
+  batch(kind, text) {
+    const who = actor(state.index.packet, state.role);
+    const { events, skipped } = buildBatch(state, kind, text, who);
+    if (!events.length) { state.batchMsg = kind === 'verify' ? 'None of the selected lines has a check waiting for verification.' : 'Nothing selected.'; render(); return; }
+    state.batchMsg = `Applied ${events.length} change${events.length === 1 ? '' : 's'} to ${new Set(events.map((e) => e.claim)).size} lines${skipped ? `; ${skipped} had nothing to do` : ''}.`;
+    state.selected = new Set();
+    state.batchText = '';
+    state.events = [...state.events, ...events];
+    state.unsaved = [...state.unsaved, ...events];
+    render();
+    flush();
+  },
+  undoBatch() {
+    const last = lastBatch(state.events);
+    if (!last) return;
+    const ev = undoEvent(last, actor(state.index.packet, state.role));
+    state.batchMsg = `Undid the last batch (${last.count} changes).`;
+    state.events = withoutUndone([...state.events, ev]);
+    state.unsaved = [...state.unsaved, ev];
+    render();
+    flush();
+  },
+  seen() { state.since = writeSince(state.role); state.onlyNew = false; render(); }, // "Mark all as seen"
   group(key, open) { state.groupsOpen.set(key, open); }, // remembered across redraws; no redraw needed
   record(id) { state.record = id; if (id) state.recordsOpen = true; render(); els.claim.scrollTop = 0; },
   recordsOpen(open) { state.recordsOpen = open; },
   passed(open) { state.passedOpen = open; }, // remembered across redraws; no redraw needed
   viewLog(open) { if (open === state.viewLogOpen) return; state.viewLogOpen = open; if (open) refreshAllViews(); }, // load the whole log while its panel is open
-  role(roleKey) { state.role = roleKey; state.revealed.clear(); state.allViews = null; render(); refreshViews(); refreshEvents(); if (state.viewLogOpen) refreshAllViews(); },
+  role(roleKey) { pending = null; showNewBar(); writeSince(state.role); state.role = roleKey; state.since = readSince(roleKey); state.onlyNew = false; state.revealed.clear(); state.allViews = null; render(); refreshViews(); refreshEvents(); if (state.viewLogOpen) refreshAllViews(); },
   reveal(ref) { // show or hide the sensitive numbers of one record; showing is recorded in the view log
     if (state.revealed.has(ref)) state.revealed.delete(ref);
     else { state.revealed.add(ref); trackView(`reveal:${ref}`, 'source'); }
@@ -195,6 +234,7 @@ async function flush() {
     }
     state.saveError = false;
     try { state.events = await loadEvents(roleLabel()); } catch { /* keep what is on screen */ }
+    channel?.postMessage('saved'); // other tabs of this app check straight away instead of waiting for the 10 s timer
     render();
   } finally {
     flushing = false;
@@ -335,10 +375,7 @@ function render({ scrollToMark = false } = {}) {
 async function syncFromServer() {
   if (!state.index || state.loadError || state.unsaved.length || document.hidden) return;
   let changed = false;
-  try {
-    const events = await loadEvents(roleLabel());
-    if (events.length !== state.events.length) { state.events = events; changed = true; }
-  } catch { /* server unreachable: keep what is on screen */ }
+  await checkForNew(); // other people's changes arrive as the "N new changes" pill, not silently
   const key = state.key;
   const role = actor(state.index.packet, state.role).role;
   const views = await readViews(key);
@@ -348,6 +385,40 @@ async function syncFromServer() {
   }
   if (changed && state.key === key) render();
 }
+// Ch5: every 10 seconds ask the server whether anyone else added something. Only a quiet bar changes;
+// the page itself is not redrawn, so nobody loses a half-written note.
+const newBar = h('div', { class: 'new-bar', role: 'status' });
+newBar.style.display = 'none';
+document.body.append(newBar);
+const channel = 'BroadcastChannel' in window ? new BroadcastChannel('trail-events') : null;
+if (channel) channel.onmessage = () => checkForNew();
+let pending = null; // { count, events } the server has and this page does not
+
+function showNewBar() {
+  clear(newBar);
+  if (!pending) { newBar.style.display = 'none'; return; }
+  newBar.style.display = '';
+  newBar.append(`${pending.count} new change${pending.count === 1 ? '' : 's'} `, h('button', { type: 'button', class: 'linkish', onClick: () => {
+    state.events = pending.events;
+    pending = null;
+    showNewBar();
+    render();
+  } }, 'Show'));
+}
+
+async function checkForNew() {
+  if (!state.index || state.loadError || state.unsaved.length || document.hidden) return;
+  let list;
+  try { list = await loadEvents(roleLabel()); } catch { return; } // server unreachable: stay quiet
+  const have = new Set(state.events.map((e) => e.id));
+  const count = list.filter((e) => !have.has(e.id)).length;
+  if (count === (pending?.count ?? 0)) { if (pending) pending.events = list; return; }
+  pending = count ? { count, events: list } : null;
+  showNewBar();
+}
+setInterval(checkForNew, 10000);
+
+window.addEventListener('pagehide', () => writeSince(state.role)); // so the next visit knows where you stopped
 document.addEventListener('visibilitychange', syncFromServer);
 window.addEventListener('focus', syncFromServer);
 

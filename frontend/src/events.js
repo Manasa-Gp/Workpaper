@@ -182,7 +182,7 @@ export const EVENT_LABEL = {
   note: 'Note', adjust: 'Adjusted', signoff: 'Signed off', revert: 'Reverted', verify: 'Verified',
   evidence: 'Evidence added', question: 'Question', answer: 'Answer', block: 'Review point', clear: 'Review point cleared',
   assign: 'Assigned', done: 'Task done', present: 'Presented for approval', approve: 'Approved and signed',
-  file: 'Filed and frozen', amend: 'Amended after filing', time: 'Time recorded', decision: 'Judgment recorded',
+  file: 'Filed and frozen', amend: 'Amended after filing', time: 'Time recorded', decision: 'Judgment recorded', undo: 'Batch undone',
 };
 
 // ---------- freeze at filing, amend on top ----------

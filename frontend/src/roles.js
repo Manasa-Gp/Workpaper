@@ -4,11 +4,11 @@
 // does not have is disabled and says why. Names come from packet.firm.staff.
 
 export const ROLES = {
-  preparer: { label: 'Preparer', staffId: 'st-01', can: ['note', 'adjust', 'amend', 'evidence', 'ask', 'answer', 'seepoints', 'done', 'time', 'decide'] },
+  preparer: { label: 'Preparer', staffId: 'st-01', can: ['note', 'adjust', 'amend', 'evidence', 'ask', 'answer', 'seepoints', 'done', 'time', 'decide', 'undo'] },
   // A second preparer the firm has NOT cleared for sensitive data (packet: Marcus Bell, st-04). Same work, but no Reveal.
-  preparer2: { label: 'Preparer', staffId: 'st-04', can: ['note', 'adjust', 'amend', 'evidence', 'ask', 'answer', 'seepoints', 'done', 'time', 'decide'] },
-  reviewer: { label: 'Reviewer', staffId: 'st-02', can: ['note', 'evidence', 'ask', 'answer', 'verify', 'signoff', 'viewlog', 'block', 'clear', 'seepoints', 'assign', 'done', 'present', 'time', 'decide'] },
-  partner: { label: 'Partner', staffId: 'st-03', can: ['note', 'evidence', 'ask', 'answer', 'verify', 'signoff', 'viewlog', 'block', 'clear', 'seepoints', 'assign', 'done', 'present', 'file', 'time', 'decide'] },
+  preparer2: { label: 'Preparer', staffId: 'st-04', can: ['note', 'adjust', 'amend', 'evidence', 'ask', 'answer', 'seepoints', 'done', 'time', 'decide', 'undo'] },
+  reviewer: { label: 'Reviewer', staffId: 'st-02', can: ['note', 'evidence', 'ask', 'answer', 'verify', 'signoff', 'viewlog', 'block', 'clear', 'seepoints', 'assign', 'done', 'present', 'time', 'decide', 'undo'] },
+  partner: { label: 'Partner', staffId: 'st-03', can: ['note', 'evidence', 'ask', 'answer', 'verify', 'signoff', 'viewlog', 'block', 'clear', 'seepoints', 'assign', 'done', 'present', 'file', 'time', 'decide', 'undo'] },
   client: { label: 'Client', staffId: null, can: ['answer', 'approve'] },
   // Joins the engagement on 2027-01-04 (packet: st-06). Reads everything staff can read, changes nothing.
   quality: { label: 'Quality reviewer', staffId: 'st-06', can: ['viewlog'] },
@@ -56,5 +56,6 @@ export const WHY_NOT = {
   amend: 'Only a preparer can amend a filed number.',
   reset: 'Only the administrator can reset saved work.',
   time: 'Only the firm’s staff can record time.',
+  undo: 'Only the firm’s staff can undo a batch.',
   decide: 'Only the firm’s staff can record a judgment.',
 };

@@ -22,6 +22,7 @@ import { num, signed, dayTime, dueDay } from '../format.js';
 import { EVENT_LABEL, filedEvent, filedValue, effectiveValue, questionsFor, reviewPointsFor, assignmentsFor, eventsFor, verifiedEvent, signoffBlocker, signoffState, taxEffect, newEvent, needsPartner, PARTNER_OVER, DECISION_LABEL } from '../events.js';
 import { actor, can, WHY_NOT } from '../roles.js';
 import { varianceFlags, swingNoteFor } from '../standards.js';
+import { tryTotals } from '../batch.js';
 
 const LABEL = { pass: 'Pass', warn: 'Look at this', fail: 'Failed', na: 'Not applicable' };
 const GLYPH = { pass: '✓', warn: '!', fail: '×', na: '·' };
@@ -47,10 +48,12 @@ export function renderClaim(el, state, on) {
   const notes = eventsFor(state.events, line.key);
 
   el.append(
+    ...[tryBanner(state, on)].filter(Boolean), // el.append would print "null" when there is no banner
     h('header', { class: 'claim-head' },
       h('p', { class: 'eyebrow' }, `${line.jurisdiction === 'california' ? 'California' : 'Federal'} · ${line.form} line ${line.line}`),
       h('h1', {}, line.label),
       h('p', { class: 'big' }, typeof value === 'number' ? num(value) : String(value)),
+      state.tryIt.has(line.key) ? h('p', { class: 'tryit-line' }, h('strong', {}, `What if: ${num(state.tryIt.get(line.key))}`), ` (real value ${num(value)}), not saved`) : null,
       h('div', { class: 'pills' },
         pill(status, waiting && status === 'warn' ? `${waiting} waiting for verification` : status === 'pass' ? 'All checks pass' : status === 'na' ? 'Calculated line' : LABEL[status]),
         adjusted ? h('span', { class: 'pill p-info' }, `Adjusted from engine value ${num(line.value)}`) : null,
@@ -59,6 +62,7 @@ export function renderClaim(el, state, on) {
         so.state === 'signed' ? h('span', { class: 'pill p-pass' }, `Signed off by ${so.last.by.name}`) : null,
         so.state === 'reopened' ? h('span', { class: 'pill p-warn' }, `Sign-off reopened: value changed from ${num(so.last.valueAtSignoff)}`) : null,
       ),
+      changeNote(state.index, line),
       line.note ? h('p', { class: 'engine-note' }, h('strong', {}, 'Engine note '), line.note) : null,
     ),
 
@@ -97,6 +101,7 @@ export function renderClaim(el, state, on) {
 
     section('Notes, changes and sign-off',
       safe('Actions', () => actions(state, line, value, checks, on)),
+      safe('Try it', () => tryItSection(state, line, value, on)),
       safe('Judgment', () => judgment(state, line, on)),
       safe('History', () => history(notes.filter((e) => !e.private))),
     ),
@@ -620,4 +625,46 @@ function judgment(state, line, on) {
     decisions.length ? h('ul', { class: 'std-flags' }, decisions.map((d) => h('li', {}, h('strong', {}, `${DECISION_LABEL[d.category] ?? d.category}: `), d.text, ` — authority: ${d.authority} (${d.by.name})`))) : null,
     h('div', { class: 'action' }, h('p', { class: 'muted' }, 'An election, due diligence, a penalty or any call you made. Write what you decided and what it rests on.'),
       h('div', { class: 'row2' }, kind, text), authority, h('div', { class: 'btns' }, save), msg));
+}
+
+/** b15: on the line itself, what the engine changed in the latest version (old and new value). */
+function changeNote(index, line) {
+  const change = (index.current.changes_from_previous ?? []).find((c) => c.key === line.key);
+  if (!change) return null;
+  const v = index.versions[index.versions.length - 2]?.version ?? 'the last version';
+  const text = change.change === 'added' ? `Added in ${index.current.version}: ${num(change.new)}.`
+    : change.change === 'removed' ? `Removed in ${index.current.version}.`
+    : `Changed since ${v}: ${num(change.old)} → ${num(change.new)}.`;
+  return h('p', { class: 'engine-note' }, h('strong', {}, 'Version change '), text);
+}
+
+// ---------- what-ifs (Ch3): never saved ----------
+
+function tryBanner(state, on) {
+  if (!state.tryIt.size) return null;
+  const t = tryTotals(state);
+  return h('div', { class: 'tryit-banner', role: 'status' },
+    h('strong', {}, 'What-if mode. '), `${t.tried} number${t.tried === 1 ? '' : 's'} tried; nothing is saved and a reload clears it. `,
+    t.mapped ? `Estimated tax effect of all of them: federal ${signed(Math.round(t.federal))}, California ${signed(Math.round(t.california))}.` : 'None of them has a tax rate in the packet, so no tax effect is shown.',
+    h('button', { type: 'button', class: 'linkish', onClick: () => on.tryClear() }, 'Stop trying everything'));
+}
+
+function tryItSection(state, line, value, on) {
+  if (!can(state.role, 'seepoints')) return '';
+  const tried = state.tryIt.get(line.key);
+  const input = h('input', { id: 'try-value', type: 'number', step: 'any', placeholder: `Try a value (now ${num(value)})`, 'aria-label': 'Try a value', value: tried ?? '' });
+  const preview = h('p', { class: 'muted' });
+  const show = () => {
+    const to = Number(input.value);
+    if (input.value === '' || Number.isNaN(to)) { preview.textContent = ''; return; }
+    const fx = taxEffect(state.index.current, line.key, to - value);
+    preview.textContent = fx ? `If it were ${num(to)}: federal ${signed(fx.federal)}, California ${signed(fx.california)} (estimated, not saved).` : `If it were ${num(to)}: no tax rate is mapped for this line, so no tax effect is shown.`;
+  };
+  input.addEventListener('input', show);
+  show();
+  const go = h('button', { type: 'button', class: 'btn', onClick: () => { const to = Number(input.value); if (input.value !== '' && !Number.isNaN(to)) on.tryIt(line.key, to); } }, 'Try it');
+  const stop = tried !== undefined ? h('button', { type: 'button', class: 'btn btn-quiet', onClick: () => on.tryIt(line.key, null) }, 'Stop trying this one') : null;
+  return h('div', { class: 'action' },
+    h('p', { class: 'muted' }, 'Test a different number without changing anything. Nothing is saved, no sign-off reopens, and a reload clears it.'),
+    h('div', { class: 'row2' }, input, go), preview, stop);
 }

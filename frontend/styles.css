@@ -345,3 +345,31 @@ dl.record dl.record { margin: 0; padding-left: 8px; border-left: 2px solid var(-
 .record-block h2 { font-size: 1em; }
 
 .swing { border-left: 3px solid #b7791f; padding-left: .75rem; }
+
+.tryit-banner { background: #fff4d6; border: 1px solid #b7791f; padding: .5rem .75rem; margin-bottom: .75rem; }
+.batch-bar { border: 1px solid #888; padding: .5rem .75rem; margin: .5rem 0; display: grid; gap: .4rem; }
+.sel-box { margin-right: .4rem; }
+
+/* Keep the search box and the list visible however many panels and toggles sit above them. */
+.picker { overflow-y: auto; }
+.panels { max-height: 30vh; flex: 0 0 auto; }
+.picker-head { flex-direction: row; flex-wrap: wrap; gap: 6px 14px; flex: 0 0 auto; }
+.picker-head input[type='search'] { flex: 1 1 100%; }
+.picker-head .toggle { flex: 0 0 auto; }
+.picker-list { flex: 1 1 auto; min-height: 220px; }
+
+/* The search box and toggles are always the first thing in the left column, above every panel. */
+.picker-head { order: -1; position: sticky; top: 0; z-index: 3; background: var(--panel); }
+.status-counts { order: 0; }
+.panels { order: 1; }
+.batch-bar { order: 2; }
+.picker-list { order: 3; }
+
+/* The panels no longer scroll in a small box of their own (it hid Activity at the bottom); the whole left column scrolls instead. */
+.panels { max-height: none; overflow: visible; }
+
+.tryit-line { background: #fff4d6; border: 1px dashed #b7791f; padding: .25rem .6rem; margin: .25rem 0; display: inline-block; }
+
+.new-bar { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); z-index: 20; background: var(--panel); border: 1px solid var(--accent); border-radius: 999px; padding: 6px 16px; box-shadow: var(--shadow); font-size: 13px; }
+
+.tryit-banner { position: sticky; top: -20px; z-index: 5; }

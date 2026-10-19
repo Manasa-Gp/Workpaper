@@ -7,9 +7,12 @@ import { booksToTax, rentals, k1Lines, retirementForeign, deductionsCredits } fr
 import { stateSplit, carryovers, basisByYear, priorPreparer } from './history.js';
 
 import { completeness, decisionsLog } from './judgment.js';
+import { versionCompare, changedSinceLast } from './change.js';
+import { crossCheckList } from './crosschecks.js';
 
 export const RECORDS = [
   { id: 'summary', group: 'Return', title: 'Return summary against last year', build: returnSummary },
+  { id: 'crosschecks', group: 'Return', title: 'Cross-checks against agencies and documents', build: crossCheckList },
   { id: 'computation', group: 'Return', title: 'Tax computation', build: taxComputation },
   { id: 'areas', group: 'Return', title: 'Area summaries', build: areaSummaries },
   { id: 'documents', group: 'Return', title: 'Document index', build: documentIndex },
@@ -28,6 +31,8 @@ export const RECORDS = [
   { id: 'prior', group: 'History', title: 'Prior preparer against what we changed', build: priorPreparer },
   { id: 'completeness', group: 'Judgment', title: 'Completeness: what might be missing', build: completeness },
   { id: 'decisions', group: 'Judgment', title: 'Judgments and their authority', build: decisionsLog },
+  { id: 'changed', group: 'Change', title: 'Changed since the last version', build: changedSinceLast },
+  { id: 'compare', group: 'Change', title: 'Compare versions', build: versionCompare },
 ];
 
 export const recordById = (id) => RECORDS.find((r) => r.id === id) ?? null;

@@ -12,6 +12,8 @@
 //   duplicatePage  other pages inside the same document with the same figures
 //   tieOut         the sum of a claim's source values  vs  the claim's value
 
+import { crossChecksFor } from './crosschecks.js';
+
 const RANK = { fail: 3, warn: 2, pass: 1, na: 0 };
 export const worst = (checks) =>
   checks.reduce((acc, c) => (RANK[c.status] > RANK[acc] ? c.status : acc), 'na');
@@ -191,6 +193,7 @@ export function tieOut(line, sources) {
 /** All checks for one claim: its own tie-out plus every check on each source value. */
 export function claimChecks(index, trace, adjustedValue) {
   const checks = [tieOut(trace.line, trace.sources)];
+  const cross = crossChecksFor(index, trace.line.key); // Block 13: set against the IRS, the FTB and the documents
   const seen = new Set();
   for (const source of trace.sources) {
     if (source.kind === 'unread') {
@@ -215,6 +218,7 @@ export function claimChecks(index, trace, adjustedValue) {
   // The engine-value row above stays, so the original result is still visible.
   const adjusted = adjustedMismatch(trace.line, checks[0], adjustedValue);
   if (adjusted) checks.splice(1, 0, adjusted);
+  checks.push(...cross);
   return checks.map((c) => resolveDuplicate(c, trace, checks[0]));
 }
 

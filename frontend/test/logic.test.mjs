@@ -320,6 +320,47 @@ test('nothing in frontend/src draws text with innerHTML or similar', () => {
   for (const file of files) assert.ok(!banned.test(readFileSync(file, 'utf8')), `${file.pathname} must not use ${banned}`);
 });
 
+// ---- Block 13: cross-checks against the agencies and documents ----
+import { crossChecks, crossChecksFor, parseDated } from '../src/crosschecks.js';
+const byId = (id) => crossChecks(index).find((c) => c.id === id);
+
+test('estimated payments: 13,000 claimed against 12,000 at the IRS (the 2026-01 payment is 4,000 vs 3,000)', () => {
+  const c = byId('pay-fed');
+  assert.equal(c.status, 'fail');
+  assert.equal(c.said, '13,000'); assert.equal(c.other, '12,000');
+  assert.match(c.detail, /2026-01-14: 4,000 claimed, 3,000 at the IRS on 2026-01-15/);
+  assert.equal(worst(claimChecks(index, traceClaim(index, 'F1040.26'))), 'fail');
+});
+
+test('California estimated payments: 14,000 claimed, 10,500 at the FTB; the 2025-09-15 payment was held for 2024', () => {
+  const c = byId('pay-ca');
+  assert.equal(c.status, 'fail');
+  assert.equal(c.other, '10,500');
+  assert.match(c.detail, /2025-09-15: 3,500 claimed, but the Franchise Tax Board holds it as/);
+});
+
+test('the Subaru gift: 6,000 deducted, 2,900 sale price on Form 1098-C', () => {
+  const c = byId('vehicle-F8283.A1.vehicle');
+  assert.equal(c.status, 'fail');
+  assert.equal(c.said, '6,000'); assert.equal(c.other, '2,900');
+  assert.deepEqual(c.refs, ['ev-1054']);
+  assert.ok(crossChecksFor(index, 'F8283.A1.vehicle').some((x) => x.status === 'fail'));
+});
+
+test('Theo’s Social Security number: the card (D71) ends 3390, the household record 3309; only last four digits are shown', () => {
+  const c = byId('ssn-theo');
+  assert.equal(c.status, 'fail');
+  assert.equal(c.said, 'ends 3309'); assert.equal(c.other, 'ends 3390');
+  assert.match(c.detail, /swapped/);
+  assert.ok(!/666-74/.test(c.detail), 'the full number must not appear');
+  assert.ok(c.lines.includes('F8812.4'));
+});
+
+test('a cross-check that agrees passes (made-up matching figures)', () => {
+  const ok = parseDated('2025-04-15 3,000.00; 2025-06-16 3,000.00');
+  assert.deepEqual(ok, [{ date: '2025-04-15', amount: 3000 }, { date: '2025-06-16', amount: 3000 }]);
+});
+
 // Summary over every claim with evidence, so you can see what the checks find overall.
 const tally = { fail: 0, warn: 0, pass: 0, na: 0 };
 for (const line of index.current.lines) {

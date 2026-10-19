@@ -207,3 +207,17 @@ assert not any(e.get("type") == "decision" for e in visible_events([dec()], "Cli
 assert "15 characters" in check_event({**ev("Preparer", "note"), "swing": True, "text": "up"})
 assert check_event({**ev("Preparer", "note"), "swing": True, "text": "Ngozi changed jobs in July, so wages rose."}) is None
 print("judgment ok")
+
+
+# Ch4: undo the latest batch
+def bn(batch, claim="X"): return {**ev("Preparer", "note"), "claim": claim, "batch": batch, "text": "hi"}
+def und(batch): return {**ev("Preparer", "undo"), "batch": batch}
+assert check_event(und("b2"), [bn("b1"), bn("b2"), bn("b2", "Y")]) is None
+assert "latest" in check_event(und("b1"), [bn("b1"), bn("b2")])
+assert "no batch" in check_event(und("b1"), [bn("b1"), und("b1")])
+assert check_event(und("b1"), [bn("b1"), bn("b2"), und("b2")]) is None        # after b2 is undone, b1 is the latest
+assert "may not" in check_event({**und("b1"), "by": {"name": "x", "role": "Client"}}, [bn("b1")])
+seen = visible_events([bn("b1"), und("b1")], "Reviewer")
+assert [e["type"] for e in seen] == ["undo"]                                   # the batch note is gone, the undo shows
+assert visible_events([bn("b1"), und("b1")], "Client") == []                    # the client sees neither
+print("batch ok")

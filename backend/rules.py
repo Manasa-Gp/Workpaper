@@ -18,9 +18,9 @@ from pathlib import Path
 
 # role label (as written in event["by"]["role"]) -> event types that role may add
 ALLOWED = {
-    "Preparer": {"note", "adjust", "revert", "evidence", "question", "answer", "done", "amend", "time", "decision"},
-    "Reviewer": {"note", "evidence", "verify", "signoff", "question", "answer", "block", "clear", "assign", "done", "present", "time", "decision"},
-    "Partner": {"note", "evidence", "verify", "signoff", "question", "answer", "block", "clear", "assign", "done", "present", "file", "time", "decision"},
+    "Preparer": {"note", "adjust", "revert", "evidence", "question", "answer", "done", "amend", "time", "decision", "undo"},
+    "Reviewer": {"note", "evidence", "verify", "signoff", "question", "answer", "block", "clear", "assign", "done", "present", "time", "decision", "undo"},
+    "Partner": {"note", "evidence", "verify", "signoff", "question", "answer", "block", "clear", "assign", "done", "present", "file", "time", "decision", "undo"},
     "Quality reviewer": set(),  # reads everything, changes nothing (the packet has them join on 2027-01-04)
     "Client": {"answer", "approve"},  # the client answers questions and approves/signs the return; nothing else
     "Administrator": set(),
@@ -45,6 +45,8 @@ def check_event(event, events=()):
         return _check_time(event)
     if kind == "decision":
         return _check_decision(event)
+    if kind == "undo":
+        return _check_undo(event, events)
     if kind == "note" and event.get("swing") and len(str(event.get("text", "")).strip()) < 15:
         return "An explanation of a change against last year needs at least 15 characters."
     if kind == "file":
@@ -132,6 +134,21 @@ def _check_decision(event):
         return "Say what was decided (at least 15 characters)."
     if len(str(event.get("authority", "")).strip()) < 3:
         return "Name the authority relied on (a Code section, a form instruction, or the client's document)."
+    return None
+
+
+def undone_batches(events):
+    return {e.get("batch") for e in events if e.get("type") == "undo"}
+
+
+def _check_undo(event, events):
+    """Ch4: only the newest batch still showing can be taken back, and only once."""
+    batch = event.get("batch")
+    live = [e for e in events if e.get("batch") and e.get("type") != "undo" and e.get("batch") not in undone_batches(events)]
+    if not batch or not live:
+        return "There is no batch to undo."
+    if live[-1]["batch"] != batch:
+        return "Only the latest batch can be undone."
     return None
 
 
@@ -362,7 +379,7 @@ def check_view(view):
 # A question is private to the person who asked it, the person it is for, and the Partner
 # (who signs off the whole file). Everyone else only learns that a question exists.
 
-STAFF_ONLY_KINDS = ("block", "clear", "assign", "done", "time", "decision")  # the firm's internal working notes
+STAFF_ONLY_KINDS = ("block", "clear", "assign", "done", "time", "decision", "undo")  # the firm's internal working notes
 STAFF_READERS = set(STAFF_ROLES) | {"Quality reviewer"}
 
 
@@ -375,8 +392,11 @@ def visible_events(events, role):
     """The events this role is allowed to receive. Hidden questions become a bare stub; their answers are dropped."""
     questions = {e.get("id"): e for e in events if e.get("type") == "question"}
     out = []
+    undone = undone_batches(events)
     for e in events:
         kind = e.get("type")
+        if e.get("batch") in undone and kind != "undo":
+            continue  # taken back by "undo last batch": the file keeps it, nobody is shown it
         if kind in STAFF_ONLY_KINDS and role not in STAFF_READERS:
             continue  # review points and assignments are not for the client or the administrator
         if kind == "question" and not _may_read_question(e, role):
