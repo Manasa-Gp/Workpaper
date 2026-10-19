@@ -3,7 +3,7 @@ from rules import signers, open_blocks, visible_events, can_read_views, can_repl
 
 
 def ev(role, kind):
-    return {"claim": "F1040.1a", "type": kind, "by": {"name": "x", "role": role}}
+    return {"claim": "F1040.1z", "type": kind, "by": {"name": "x", "role": role}}
 
 
 assert check_event(ev("Preparer", "adjust")) is None
@@ -127,10 +127,10 @@ for role in ("Preparer", "Reviewer", "Partner", "Client", "Administrator"):
 
 # ---- freeze at filing, amend on top ----
 def fil(fp="F1", pid="p1", role="Partner", snap=None):
-    return {**ev(role, "file"), "id": "f1", "claim": "RETURN", "fingerprint": fp, "presents": pid, "snapshot": snap if snap is not None else {"F1040.1a": 100, "F1040.1z": 200}}
-def amd(frm=100, to=150, text="Client sent a corrected W-2 on 3 Nov", claim="F1040.1a", role="Preparer"):
+    return {**ev(role, "file"), "id": "f1", "claim": "RETURN", "fingerprint": fp, "presents": pid, "snapshot": snap if snap is not None else {"F1040.1a": 200, "F1040.1z": 100}}
+def amd(frm=100, to=150, text="Client sent a corrected W-2 on 3 Nov", claim="F1040.1z", role="Preparer"):
     return {**ev(role, "amend"), "claim": claim, "from": frm, "to": to, "text": text}
-def sgn(value): return {**ev("Reviewer", "signoff"), "claim": "F1040.1a", "valueAtSignoff": value}
+def sgn(value): return {**ev("Reviewer", "signoff"), "claim": "F1040.1z", "valueAtSignoff": value}
 approved = [pre(), apr(), apr("Erik Lindqvist")]
 assert filed_event(approved) is None
 assert check_event(fil(), approved) is None                                         # approved by both: the Partner can file
@@ -221,3 +221,22 @@ seen = visible_events([bn("b1"), und("b1")], "Reviewer")
 assert [e["type"] for e in seen] == ["undo"]                                   # the batch note is gone, the undo shows
 assert visible_events([bn("b1"), und("b1")], "Client") == []                    # the client sees neither
 print("batch ok")
+
+
+# Checks enforced on the server: a failing or flagged check blocks a sign-off that skips the page
+import checks as C
+_idx = C.load_index()
+def so_for(claim, role="Reviewer"): return {**ev(role, "signoff"), "claim": claim, "valueAtSignoff": 1}
+def note_for(claim, text, **kw): return {**ev("Preparer", "note"), "claim": claim, "text": text, **kw}
+assert "A check failed" in check_event(so_for("F1040.26"), [])                                   # 13,000 against the IRS's 12,000
+assert "at least 15 characters" in check_event(so_for("F1040.26"), [note_for("F1040.26", "short")])
+assert check_event(so_for("F1040.26"), [note_for("F1040.26", "Client confirms the January payment was 4,000.")]) is None
+assert check_event(so_for("F1040.26", "Partner"), []) is not None                                 # the Partner is held to the same rule
+assert "A check failed" in check_event(so_for("F1040.26"), [note_for("F1040.26", "A long enough reason to count", batch="b1"), und("b1")])  # an undone note does not count
+assert "A check" in check_event(so_for("SchCA540NR.1.E"), [])                                    # California wages (a duplicate-document warning comes first on this line)
+assert "A check failed" in check_event(so_for("Sch1.17"), [])                                     # SE health insurance against qa-25
+_verify_key = next(l["key"] for l in _idx.current["lines"] if any(c.get("verify") for c in C.claim_checks(_idx, C.trace_claim(_idx, l["key"]))))
+assert "waiting for verification" in check_event(so_for(_verify_key), [])
+assert "waiting for verification" not in str(check_event(so_for(_verify_key), [{**ev("Reviewer", "verify"), "claim": _verify_key, "check": next(c["verifyKey"] for c in C.claim_checks(_idx, C.trace_claim(_idx, _verify_key)) if c.get("verify"))}]))
+assert check_event(so_for("X"), []) is None                                                       # not a line of the return: nothing to check
+print("server checks ok")

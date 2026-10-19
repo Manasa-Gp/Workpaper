@@ -9,10 +9,13 @@ import { stateSplit, carryovers, basisByYear, priorPreparer } from './history.js
 import { completeness, decisionsLog } from './judgment.js';
 import { versionCompare, changedSinceLast } from './change.js';
 import { crossCheckList } from './crosschecks.js';
+import { reconciliations, incomeSplit } from './reconcile.js';
 
 export const RECORDS = [
   { id: 'summary', group: 'Return', title: 'Return summary against last year', build: returnSummary },
   { id: 'crosschecks', group: 'Return', title: 'Cross-checks against agencies and documents', build: crossCheckList },
+  { id: 'reconcile', group: 'Return', title: 'Figures that should agree', build: reconciliations },
+  { id: 'incomesplit', group: 'Return', title: 'Income split between states', build: incomeSplit },
   { id: 'computation', group: 'Return', title: 'Tax computation', build: taxComputation },
   { id: 'areas', group: 'Return', title: 'Area summaries', build: areaSummaries },
   { id: 'documents', group: 'Return', title: 'Document index', build: documentIndex },

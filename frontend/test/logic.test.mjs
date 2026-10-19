@@ -321,7 +321,7 @@ test('nothing in frontend/src draws text with innerHTML or similar', () => {
 });
 
 // ---- Block 13: cross-checks against the agencies and documents ----
-import { crossChecks, crossChecksFor, parseDated } from '../src/crosschecks.js';
+import { crossChecks, crossChecksFor, parseDated, incomeByCategory } from '../src/crosschecks.js';
 const byId = (id) => crossChecks(index).find((c) => c.id === id);
 
 test('estimated payments: 13,000 claimed against 12,000 at the IRS (the 2026-01 payment is 4,000 vs 3,000)', () => {
@@ -356,9 +356,39 @@ test('Theo’s Social Security number: the card (D71) ends 3390, the household r
   assert.ok(c.lines.includes('F8812.4'));
 });
 
+test('California wages: 218,400 on the line, but the move (2025-07-15) and the paystub support 129,569', () => {
+  const c = byId('ca-wages');
+  assert.equal(c.status, 'fail');
+  assert.equal(c.said, '218,400'); assert.equal(c.other, '129,569');
+  assert.match(c.detail, /Corvane Systems, Inc.: 107,100 in full \(the job ended 2025-05-16/);
+  assert.match(c.detail, /Halvorsen Data LLC: 22,469 from the paystub \(D73\)/);
+  assert.equal(worst(claimChecks(index, traceClaim(index, 'SchCA540NR.1.E'))), 'fail');
+});
+
+test('SE health insurance: 14,400 deducted, but qa-25 and the W-2 dates show 12 of 12 months of employer coverage', () => {
+  const c = byId('se-health');
+  assert.equal(c.status, 'fail');
+  assert.equal(c.said, '14,400'); assert.equal(c.other, '0');
+  assert.match(c.detail, /Corvane Systems, Inc. \(Jan–May\), Halvorsen Data LLC \(Jun–Dec\)/);
+  assert.match(c.detail, /12 of 12 months/);
+  assert.deepEqual(c.refs, ['ev-0484']);
+});
+
 test('a cross-check that agrees passes (made-up matching figures)', () => {
   const ok = parseDated('2025-04-15 3,000.00; 2025-06-16 3,000.00');
   assert.deepEqual(ok, [{ date: '2025-04-15', amount: 3000 }, { date: '2025-06-16', amount: 3000 }]);
+});
+
+test('Cal1: the four pairs agree, and each Form 8949 box adds up', () => {
+  for (const id of ['rec-capgain', 'rec-interest', 'rec-dividends', 'rec-adjust', 'rec-8949']) assert.equal(byId(id).status, 'pass', id);
+  assert.equal(byId('rec-capgain').detail, 'SchD.16 (185,027) and F1040.7 (185,027) agree.');
+});
+
+test('Cal4: income categories add up to the federal, California-law and California totals', () => {
+  const rows = incomeByCategory(index);
+  assert.ok(rows.length > 0);
+  for (const id of ['rec-state-fed', 'rec-state-law', 'rec-state-ca']) assert.equal(byId(id).status, 'pass', id);
+  assert.match(byId('rec-state-ca').detail, /324,260/);
 });
 
 // Summary over every claim with evidence, so you can see what the checks find overall.

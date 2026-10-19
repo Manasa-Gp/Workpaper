@@ -16,6 +16,8 @@ from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 
+from checks import signoff_check_problem
+
 # role label (as written in event["by"]["role"]) -> event types that role may add
 ALLOWED = {
     "Preparer": {"note", "adjust", "revert", "evidence", "question", "answer", "done", "amend", "time", "decision", "undo"},
@@ -78,6 +80,11 @@ def check_event(event, events=()):
             return f"This adjustment has a tax effect over {PARTNER_OVER:,}. Only the Partner can sign it off."
         if open_blocks(events, event.get("claim")):
             return "This line has open review points. Clear them before signing off."
+        # The same data checks the page shows (checks.py), so a request that skips the page is refused too.
+        counting = [e for e in events if e.get("type") == "undo" or e.get("batch") not in undone_batches(events)]
+        problem = signoff_check_problem(counting, event.get("claim"))
+        if problem:
+            return problem
         if _already_signed(event, events):
             return "This line is already signed off at this value. It can be signed again only after the value changes."
     return None
