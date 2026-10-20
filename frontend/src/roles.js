@@ -11,7 +11,7 @@ export const ROLES = {
   partner: { label: 'Partner', staffId: 'st-03', can: ['note', 'evidence', 'ask', 'answer', 'verify', 'signoff', 'viewlog', 'block', 'clear', 'seepoints', 'assign', 'done', 'present', 'file', 'time', 'decide', 'undo'] },
   client: { label: 'Client', staffId: null, can: ['answer', 'approve'] },
   // Joins the engagement on 2027-01-04 (packet: st-06). Reads everything staff can read, changes nothing.
-  quality: { label: 'Quality reviewer', staffId: 'st-06', can: ['viewlog'] },
+  quality: { label: 'Quality reviewer', staffId: 'st-06', can: ['viewlog', 'seepoints'] }, // read-only, but may read the firm's review points, assignments and judgments
   admin: { label: 'Administrator', staffId: 'st-05', can: ['reset', 'viewlog'] },
 };
 

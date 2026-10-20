@@ -383,3 +383,188 @@ dl.record dl.record { margin: 0; padding-left: 8px; border-left: 2px solid var(-
 .rec-count { font-weight: 400; font-size: .85em; color: var(--muted, #666); }
 .rec-fold { margin: .5rem 0; }
 .rec-fold > summary { cursor: pointer; padding: .35rem 0; }
+
+/* ---------- redesign step 2: top bar and left column (looks only) ---------- */
+.topbar { min-height: 64px; padding-top: 0; padding-bottom: 0; }
+.brand-name { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; color: var(--accent); }
+.role label { text-transform: none; letter-spacing: 0; font-size: 13px; }
+.role select { height: 40px; padding: 0 12px; border-radius: var(--radius-sm); background: var(--panel); border-color: #c7d0da; }
+.role-note { font-size: 13px; }
+.role-note.proto { flex-basis: 100%; font-size: 12px; opacity: 0.85; }
+.btn { min-height: 40px; padding: 0 16px; border-radius: var(--radius-sm); background: var(--panel); font-weight: 500; }
+.btn-primary { font-weight: 600; }
+.picker-head { padding: 16px; gap: 12px; }
+.picker-head input[type='search'] { height: 44px; padding: 0 14px; border-radius: var(--radius-sm); border-color: #c7d0da; background: var(--panel); }
+.toggle { font-size: 14px; min-height: 28px; }
+.status-counts { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.count-chip { padding: 5px 12px; font-size: 13px; font-weight: 600; background: var(--panel-2); border-color: transparent; }
+.count-chip.s-pass { background: var(--pass-bg); border-color: transparent; }
+.count-chip.s-warn { background: var(--warn-bg); border-color: transparent; }
+.count-chip.s-fail { background: var(--fail-bg); border-color: transparent; }
+.row { padding: 10px 16px; min-height: 52px; align-items: center; }
+.row.is-selected { box-shadow: inset 4px 0 0 var(--accent); }
+.glyph { width: 24px; height: 24px; font-size: 13px; margin-top: 0; }
+.group h3 { padding: 8px 16px; background: var(--panel); }
+.panels > details > summary, .panels > section > h3 { padding: 14px 16px; font-weight: 600; font-size: 14px; }
+
+/* ---------- redesign step 3: claim page, middle column (looks only) ---------- */
+.claim { padding: 28px 32px; }
+.eyebrow { font-weight: 600; letter-spacing: 0.08em; }
+.claim-head h1 { font-size: 30px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.2; }
+.big { font-size: 56px; font-weight: 600; letter-spacing: -0.03em; margin: 10px 0 14px; }
+.pill { padding: 5px 14px; font-size: 14px; font-weight: 600; }
+.engine-note { padding: 12px 16px; border-radius: var(--radius-sm); }
+.block { margin-top: 28px; padding-top: 0; border-top: 0; }
+.block h2 { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; margin-bottom: 12px; }
+ul.checks { gap: 10px; }
+.check { padding: 14px 18px; border-radius: 14px; border: 1px solid var(--line); background: var(--panel); gap: 12px; }
+.check.c-fail { border-color: #f1b8b0; background: #fff6f4; }
+.check.c-warn { border-color: #f2d9a0; background: #fff9eb; }
+.check-title { font-size: 16px; font-weight: 600; }
+.check-detail { font-size: 14px; line-height: 1.6; }
+details.passed > summary { border-radius: var(--radius-sm); min-height: 44px; }
+.link-row, .source-row { border-radius: 12px; padding: 10px 14px; min-height: 48px; }
+.action textarea, .action input[type='text'], .action input[type='number'], .action select { border-radius: 12px; padding: 12px 14px; border-color: #c7d0da; background: var(--panel); }
+.action textarea { min-height: 84px; }
+.actions { gap: 22px; }
+.btns { gap: 12px; }
+.btns .btn, .action .btn { min-height: 44px; padding: 0 20px; border-radius: var(--radius-sm); font-weight: 600; }
+.btn-primary { background: var(--accent); }
+.btn-primary:disabled { background: #eef1f5; color: #6b7a8b; }
+.history li { padding: 4px 0 4px 16px; border-left-width: 3px; }
+.tag { padding: 3px 10px; font-weight: 600; }
+.tryit-banner, .tryit-line { border-radius: var(--radius-sm); }
+
+/* ---------- redesign step 4: source viewer, right column (looks only) ---------- */
+.source { padding: 24px; }
+.source h2 { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 14px; }
+.meta { gap: 10px 20px; padding: 14px 16px; margin-bottom: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); }
+.meta dt { font-weight: 600; letter-spacing: 0.08em; }
+.locator { padding: 12px 14px; border-radius: 12px; margin-bottom: 14px; }
+.banner { border-radius: 12px; padding: 12px 14px; }
+.tabs { gap: 6px; margin-top: 14px; }
+.tab { min-height: 40px; padding: 0 16px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); font-weight: 500; }
+.tab.is-on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.paper { border-radius: 14px; padding: 18px 20px; margin-top: 12px; }
+.paper-text { line-height: 1.75; }
+.paper-group > summary { min-height: 40px; padding: 8px 4px; }
+.mark { border-radius: 4px; padding: 2px 4px; }
+.quote { border-radius: 0 12px 12px 0; padding: 12px 16px; }
+.json { border-radius: 12px; }
+.landing h3 { font-weight: 600; }
+.chip { min-height: 32px; padding: 0 12px; font-size: 13px; }
+
+/* ---------- redesign step 5: panels and Records tables (looks only) ---------- */
+.inbox, .approval, .activity, .filing, .client-copy, .notices, .next-year, .time-budget, .view-log, .records-panel { padding: 0; }
+.inbox > summary, .approval > summary, .activity > summary, .filing > summary, .client-copy > summary,
+.notices > summary, .next-year > summary, .time-budget > summary, .view-log > summary, .records-panel > summary,
+.standards > summary { padding: 14px 16px; min-height: 48px; }
+.inbox > :not(summary), .approval > :not(summary), .activity > :not(summary), .filing > :not(summary), .client-copy > :not(summary),
+.notices > :not(summary), .next-year > :not(summary), .time-budget > :not(summary), .view-log > :not(summary), .records-panel > :not(summary) { margin-left: 16px; margin-right: 16px; }
+.inbox > :last-child, .approval > :last-child, .filing > :last-child, .notices > :last-child, .records-panel > :last-child { margin-bottom: 14px; }
+.inbox-list li, .filing-list li, .notice-item { padding: 12px 14px; border-radius: 12px; }
+.sign-fields input, .time-form input, .notice-text { border-radius: var(--radius-sm); padding: 10px 12px; border: 1px solid #c7d0da; background: var(--panel); }
+.time-bar { height: 8px; border-radius: 999px; }
+.time-bar span { border-radius: 999px; }
+.records-list li { margin: 0; }
+.records-list li .linkish, .records-list li button { min-height: 36px; }
+.rec-scroll { border: 1px solid var(--line); border-radius: 12px; }
+.rec { font-size: 14px; }
+.rec th { background: var(--panel-2); padding: 12px 14px; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); }
+.rec td { padding: 12px 14px; }
+.rec tr:last-child td { border-bottom: 0; }
+.rec tr.rec-flag td { background: var(--warn-bg); }
+.rec tr.rec-fail td { background: var(--fail-bg); }
+.rec .rec-num { font-family: var(--font-mono); }
+.rec-fold > summary { min-height: 44px; display: flex; align-items: center; font-weight: 600; }
+.record-block { margin-top: 24px; }
+
+/* ---------- redesign step 6: top tabs and pages ---------- */
+.pagenav { display: flex; gap: 4px; flex-wrap: wrap; margin-right: auto; margin-left: 8px; }
+.pagetab { min-height: 40px; padding: 0 16px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--ink-2); font-size: 14px; cursor: pointer; }
+.pagetab:hover { background: var(--panel-2); color: var(--ink); }
+.pagetab.is-on { background: var(--accent-weak); color: var(--accent); font-weight: 600; }
+.col[hidden] { display: none; }
+.app.is-page { grid-template-columns: minmax(0, 1fr); }
+.app.is-page .claim { max-width: 980px; width: 100%; margin: 0 auto; }
+.page-panels { display: flex; flex-direction: column; gap: 14px; margin-top: 20px; }
+.page-panels > details, .page-panels > section, .page-panels > div { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); overflow: hidden; }
+.page-panels > details > summary { background: var(--panel-2); }
+
+/* ---------- redesign step 7: claim page as guided steps (Z) ---------- */
+.step { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 16px; margin-top: 20px; padding: 20px 24px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+.step-n { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; background: var(--panel-2); color: var(--ink-2); }
+.step-now .step-n { background: var(--accent-weak); color: var(--accent); }
+.step-done .step-n { background: var(--pass-bg); color: var(--pass); }
+.step-title { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+.step-body > .muted:first-of-type { margin: 2px 0 14px; }
+.step .block { margin-top: 18px; }
+.sub { margin-top: 18px; }
+.sub:first-of-type { margin-top: 0; }
+.sub-title { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); margin-bottom: 10px; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; }
+.tool-panel { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
+.tool-panel .block { margin-top: 0; }
+.signoff-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 18px; padding: 14px 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel-2); }
+.signoff-text { flex: 1 1 220px; font-size: 14px; color: var(--ink-2); }
+
+/* ---------- always-visible scroll bars ---------- */
+/* No scrollbar-width / scrollbar-color here: in Chrome they replace the styled bars below with macOS overlay bars that only show on hover. */
+html::-webkit-scrollbar, body::-webkit-scrollbar, .col::-webkit-scrollbar, .picker-list::-webkit-scrollbar, .rec-scroll::-webkit-scrollbar, .inbox-list::-webkit-scrollbar, .json::-webkit-scrollbar { width: 12px; height: 12px; }
+html::-webkit-scrollbar-track, body::-webkit-scrollbar-track, .col::-webkit-scrollbar-track, .picker-list::-webkit-scrollbar-track, .rec-scroll::-webkit-scrollbar-track, .inbox-list::-webkit-scrollbar-track, .json::-webkit-scrollbar-track { background: var(--panel-2); border-radius: 999px; }
+html::-webkit-scrollbar-thumb, body::-webkit-scrollbar-thumb, .col::-webkit-scrollbar-thumb, .picker-list::-webkit-scrollbar-thumb, .rec-scroll::-webkit-scrollbar-thumb, .inbox-list::-webkit-scrollbar-thumb, .json::-webkit-scrollbar-thumb { background: #9aa8b6; border-radius: 999px; border: 3px solid var(--panel-2); min-height: 40px; }
+.col::-webkit-scrollbar-thumb:hover, .picker-list::-webkit-scrollbar-thumb:hover { background: var(--ink-2); }
+
+/* ---------- form fields, including the file chooser ---------- */
+input[type='text'], input[type='number'], input[type='search'], input[type='date'], select, textarea {
+  border: 1px solid #c7d0da; border-radius: 12px; background: var(--panel); padding: 11px 14px; min-height: 44px;
+}
+textarea { min-height: 84px; }
+input[type='file'] { display: block; width: 100%; padding: 8px; border: 1px dashed #9aa8b6; border-radius: 12px; background: var(--panel-2); color: var(--ink-2); font-size: 14px; cursor: pointer; }
+input[type='file']::file-selector-button { margin-right: 12px; min-height: 36px; padding: 0 16px; border: 1px solid var(--accent); border-radius: var(--radius-sm); background: var(--panel); color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
+input[type='file']::file-selector-button:hover { background: var(--accent-weak); }
+.added-evidence { display: flex; flex-direction: column; gap: 10px; }
+.added-evidence .row2, .added-evidence > div { display: grid; gap: 10px; }
+
+html { overflow-y: scroll; }
+
+textarea::-webkit-scrollbar { width: 12px; height: 12px; }
+textarea::-webkit-scrollbar-track { background: var(--panel-2); border-radius: 999px; }
+textarea::-webkit-scrollbar-thumb { background: #9aa8b6; border-radius: 999px; border: 3px solid var(--panel-2); }
+
+.tool-panel { scroll-margin-top: 72px; }
+
+.client-doc > summary { padding: 14px 16px; min-height: 48px; cursor: pointer; font-weight: 600; }
+.client-doc-page { padding: 0 16px 14px; }
+
+.reset-btn { margin-left: 16px; border-color: var(--fail); color: var(--fail); font-size: 13px; }
+.reset-btn:hover:not(:disabled) { background: var(--fail-bg); border-color: var(--fail); }
+
+/* breathing room under the role picker and above the page */
+.topbar { padding-top: 12px; padding-bottom: 14px; row-gap: 12px; }
+.role { row-gap: 10px; }
+.app { padding-top: 20px; }
+
+/* status counts: one strip under the top bar */
+.status-strip { background: var(--panel); border-bottom: 1px solid var(--line); padding: 10px max(16px, env(safe-area-inset-left, 0px)); }
+.status-strip[hidden] { display: none; }
+.status-strip .status-counts { padding: 0; border: 0; gap: 8px; }
+
+/* left column: search, toggles and the batch bar stay at the top; only the line list scrolls */
+.picker { overflow: hidden; }
+.picker-list { overflow: auto; flex: 1 1 0; min-height: 0; }
+.picker-head { position: static; }
+.batch-bar { order: 0; margin: 0; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: var(--panel-2); padding: 12px 16px; gap: 10px; }
+.batch-bar input[type='text'] { width: 100%; }
+.batch-bar .btns { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0; }
+.batch-bar .linkish { margin-left: 12px; }
+@media (max-width: 1100px) { .picker { overflow: visible; } .picker-list { flex: 0 0 auto; max-height: 320px; } }
+.batch-bar { order: -2; } /* first thing in the left column, above the search box */
+.picker-head { order: -1; }
+
+/* batch bar: full width, right under the status counts */
+.batch-strip { background: var(--panel-2); border-bottom: 1px solid var(--line); padding: 12px max(16px, env(safe-area-inset-left, 0px)); }
+.batch-strip[hidden] { display: none; }
+.batch-strip .batch-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; border: 0; padding: 0; background: transparent; margin: 0; order: 0; }
+.batch-strip .batch-bar input[type='text'] { flex: 1 1 280px; width: auto; }
+.batch-strip .batch-bar > p { margin: 0; }

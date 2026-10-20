@@ -33,7 +33,7 @@ export function renderRecord(el, state, on) {
       h('p', { class: 'eyebrow' }, `Record · ${def.group}`),
       h('h1', {}, def.title),
       built.intro ? h('p', { class: 'muted' }, built.intro) : null,
-      h('button', { type: 'button', class: 'btn btn-quiet', onClick: () => on.record(null) }, 'Close and go back to the numbers'),
+      h('button', { type: 'button', class: 'btn btn-quiet', onClick: () => on.record(null) }, 'Back to all records'),
     ),
     ...built.tables.map((t) => table(t, state, on)),
   );

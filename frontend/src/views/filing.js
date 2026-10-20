@@ -21,6 +21,13 @@ export function filing(state, on) {
   const word = (s) => (s ? { accepted: `accepted ${day(s.date)}`, rejected: 'rejected', not_transmitted: 'held' }[s.status] ?? s.status : 'not filed');
   const headline = status.allAccepted ? 'Filed' : status.federal ? 'In progress' : 'Not filed';
 
+  if (state.role === 'client') { // the client sees only where the filing stands, not the firm's timeline or rejections
+    return h('details', { class: 'filing', open: true },
+      h('summary', {}, 'Filing ', h('span', { class: `pill ${status.allAccepted ? 'p-pass' : 'p-info'}` }, headline)),
+      h('p', {}, `Federal: ${word(status.federal)}. California: ${word(status.california)}.`),
+      status.extendedTo ? h('p', { class: 'muted' }, `Extended to ${day(`${status.extendedTo}T12:00:00`)}.`) : null,
+    );
+  }
   return h('details', { class: 'filing' },
     h('summary', {}, 'Filing ', h('span', { class: `pill ${status.allAccepted ? 'p-pass' : 'p-info'}` }, headline)),
     h('p', {}, `Federal: ${word(status.federal)}. California: ${word(status.california)}.`),

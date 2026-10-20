@@ -32,6 +32,8 @@ import { renderPicker } from './views/picker.js';
 import { renderClaim } from './views/claim.js';
 import { renderRecord } from './views/records.js';
 import { renderSource } from './views/source.js';
+import { renderPage, pagesFor } from './views/pages.js';
+import { statusBar } from './views/statuscounts.js';
 import { h, clear } from './dom.js';
 
 const state = {
@@ -47,6 +49,8 @@ const state = {
   selected: new Set(),
   batchMsg: '',
   batchText: '',
+  tool: null, // which "More tools" panel is open on the claim page
+  page: 'review', // which top tab is open: review | approval | filing | records | team
   key: 'F1040.1a',
   sourceRef: null,
   events: [],
@@ -73,12 +77,16 @@ const els = {
   source: document.getElementById('source'),
   app: document.getElementById('app'),
   banner: document.getElementById('banner'),
+  statusbar: document.getElementById('statusbar'),
+  batchstrip: document.getElementById('batchstrip'),
 };
 
 // What the views can ask for. Each handler changes state, then render() redraws.
 const on = {
   select(key) {
+    if (state.role === 'client') return; // the client has no line pages
     state.record = null; // opening a line closes any open record
+    state.page = 'review'; // and takes you to the Review tab
     if (location.hash.slice(1) === key) { setKey(key); render(); } else location.hash = key; // hashchange -> setKey
   },
   source(ref) { state.sourceRef = ref; render({ scrollToMark: true }); trackView(ref, 'source'); },
@@ -115,11 +123,13 @@ const on = {
   },
   seen() { state.since = writeSince(state.role); state.onlyNew = false; render(); }, // "Mark all as seen"
   group(key, open) { state.groupsOpen.set(key, open); }, // remembered across redraws; no redraw needed
-  record(id) { state.record = id; if (id) state.recordsOpen = true; render(); els.claim.scrollTop = 0; },
+  record(id) { state.record = id; state.page = 'records'; if (id) state.recordsOpen = true; render(); els.claim.scrollTop = 0; },
+  tool(name) { state.tool = name; render({ scrollToTool: name !== null }); },
+  page(name) { state.page = name; state.record = null; render(); els.claim.scrollTop = 0; },
   recordsOpen(open) { state.recordsOpen = open; },
   passed(open) { state.passedOpen = open; }, // remembered across redraws; no redraw needed
   viewLog(open) { if (open === state.viewLogOpen) return; state.viewLogOpen = open; if (open) refreshAllViews(); }, // load the whole log while its panel is open
-  role(roleKey) { pending = null; showNewBar(); writeSince(state.role); state.role = roleKey; state.since = readSince(roleKey); state.onlyNew = false; state.revealed.clear(); state.allViews = null; render(); refreshViews(); refreshEvents(); if (state.viewLogOpen) refreshAllViews(); },
+  role(roleKey) { if (!pagesFor(roleKey).some((p) => p.id === state.page)) { state.page = pagesFor(roleKey)[0].id; state.record = null; } pending = null; showNewBar(); writeSince(state.role); state.role = roleKey; state.since = readSince(roleKey); state.onlyNew = false; state.revealed.clear(); state.allViews = null; render(); refreshViews(); refreshEvents(); if (state.viewLogOpen) refreshAllViews(); },
   async reveal(ref) { // show or hide the sensitive numbers of one record; the server checks the role and logs the reveal
     if (state.revealed.has(ref)) { state.revealed.delete(ref); render(); return; }
     try {
@@ -269,6 +279,7 @@ function renderBanner() {
 function setKey(key) {
   if (!state.index.current.byKey.has(key)) return;
   state.key = key;
+  state.tool = null;
   state.record = null;
   const trace = traceClaim(state.index, key);
   // Open on the problem if there is one: the first source whose check failed or warned.
@@ -367,7 +378,7 @@ function ensureSignoffCheck() {
     .then((answer) => { state.signoffCheck = answer; }).finally(() => { fetchingSignoff = false; render(); });
 }
 
-function render({ scrollToMark = false } = {}) {
+function render({ scrollToMark = false, scrollToTool = false } = {}) {
   if (!state.index) return;
   ensureChecks();
   ensureSignoffCheck();
@@ -381,14 +392,29 @@ function render({ scrollToMark = false } = {}) {
   const keepFocus = active && active.id && ['filter'].includes(active.id) ? { id: active.id, at: active.selectionStart } : null;
   const draftFocus = active && inDraftArea(active) && active.selectionStart !== undefined ? { key: draftKey(active), at: active.selectionStart } : null;
   const listScroll = els.picker.querySelector('.picker-list')?.scrollTop ?? 0;
+  const claimScroll = els.claim.scrollTop; // a click redraws the page; keep the reader where they were
+  const sourceScroll = els.source.scrollTop;
 
   renderTopbar(els.topbar, state, on);
-  renderPicker(els.picker, state, on);
-  if (state.record) renderRecord(els.claim, state, on); else renderClaim(els.claim, state, on);
+  renderPicker(els.picker, state, on, els.batchstrip);
+  const onReview = state.page === 'review';
+  if (!onReview) els.batchstrip.hidden = true; // the batch bar belongs to the line list on the Review tab
+  clear(els.statusbar); // the counts sit in a strip under the top bar, on every tab for staff
+  const strip = statusBar(state);
+  els.statusbar.hidden = !strip;
+  if (strip) els.statusbar.append(strip);
+  els.app.classList.toggle('is-page', !onReview); // other tabs use one wide column
+  els.picker.hidden = els.source.hidden = !onReview;
+  if (!onReview) renderPage(els.claim, state, on);
+  else if (state.record) renderRecord(els.claim, state, on);
+  else renderClaim(els.claim, state, on);
   renderSource(els.source, state, on);
 
   const list = els.picker.querySelector('.picker-list');
   if (list) list.scrollTop = listScroll;
+  els.claim.scrollTop = claimScroll;
+  els.source.scrollTop = sourceScroll;
+  if (scrollToTool) document.querySelector('.tool-panel')?.scrollIntoView({ block: 'start', behavior: 'smooth' }); // show the panel that was just opened
   restoreDrafts(scope);
   if (draftFocus) {
     const box = [...document.querySelectorAll(DRAFT_FIELDS)].find((el) => draftKey(el) === draftFocus.key);

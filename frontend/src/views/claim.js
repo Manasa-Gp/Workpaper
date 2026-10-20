@@ -19,7 +19,7 @@ import { traceClaim } from '../trace.js';
 import { rejectionsForLine } from '../filing.js';
 import { checksFor, signoffFor, signoffProblemFor, worst } from '../serverchecks.js';
 import { num, signed, dayTime, dueDay } from '../format.js';
-import { EVENT_LABEL, filedEvent, filedValue, effectiveValue, questionsFor, reviewPointsFor, assignmentsFor, eventsFor, verifiedEvent, taxEffect, newEvent, DECISION_LABEL } from '../events.js';
+import { EVENT_LABEL, openQuestionCount, filedEvent, filedValue, effectiveValue, questionsFor, reviewPointsFor, assignmentsFor, eventsFor, verifiedEvent, taxEffect, newEvent, DECISION_LABEL } from '../events.js';
 import { actor, can, WHY_NOT } from '../roles.js';
 import { varianceFor } from '../serverchecks.js';
 import { tryTotals } from '../batch.js';
@@ -46,6 +46,8 @@ export function renderClaim(el, state, on) {
   const adjusted = value !== line.value && !frozen;
   const so = signoffFor(state, line.key);
   const notes = eventsFor(state.events, line.key);
+  const act = actions(state, line, value, checks, on);
+  const judged = judgment(state, line, on);
 
   el.append(
     ...[tryBanner(state, on)].filter(Boolean), // el.append would print "null" when there is no banner
@@ -68,43 +70,38 @@ export function renderClaim(el, state, on) {
 
     safe('E-file rejection', () => rejectionNotice(state, line, on)),
 
-    section('How it was built',
-      h('p', { class: 'rule' }, 'Rule ', h('code', {}, line.rule ?? 'none')),
-      trace.inputs.length
-        ? h('ul', { class: 'links' }, trace.inputs.map((l) => linkRow(l, state, on)))
-        : h('p', { class: 'muted' }, trace.sources.length ? 'Read directly from the sources below.' : 'No inputs recorded.'),
+    // Z layout: the page reads top to bottom in the order a reviewer works.
+    step(1, 'Understand it', 'Where the number comes from', 'done',
+      sub('How it was built',
+        h('p', { class: 'rule' }, 'Rule ', h('code', {}, line.rule ?? 'none')),
+        trace.inputs.length
+          ? h('ul', { class: 'links' }, trace.inputs.map((l) => linkRow(l, state, on)))
+          : h('p', { class: 'muted' }, trace.sources.length ? 'Read directly from the sources below.' : 'No inputs recorded.'),
+      ),
+      sub('Where it came from',
+        trace.sources.length
+          ? h('ul', { class: 'sources' }, trace.sources.map((s) => sourceRow(s, state, on)))
+          : h('p', { class: 'muted' }, 'This line is calculated from other lines. It has no source documents of its own.'),
+      ),
+      trace.feeds.length ? sub('What uses it', h('ul', { class: 'links' }, trace.feeds.map((l) => linkRow(l, state, on)))) : '',
+      safe('Related', () => related(trace, state, on)),
     ),
 
-    section('Where it came from',
-      trace.sources.length
-        ? h('ul', { class: 'sources' }, trace.sources.map((s) => sourceRow(s, state, on)))
-        : h('p', { class: 'muted' }, 'This line is calculated from other lines. It has no source documents of its own.'),
-      safe('Added by the team', () => addedEvidence(notes, state, line, on)),
-    ),
-
-    section('Checks',
+    step(2, 'Check it', 'What was compared, and how it stands', status === 'pass' || status === 'na' ? 'done' : 'now',
       checkList(checks, state, line, on),
       checks.every((c) => c.status === 'na') ? h('p', { class: 'muted' }, 'No automatic checks apply to this line.') : null,
     ),
 
-    trace.feeds.length
-      ? section('What uses it', h('ul', { class: 'links' }, trace.feeds.map((l) => linkRow(l, state, on))))
-      : '', // el.append(null) would print the word "null"
-
-    safe('Related', () => related(trace, state, on)),
-
-    safe('Who has looked at this', () => viewLog(state)),
-
-    safe('Review points', () => reviewPoints(state, line, on)),
-    safe('Assignments', () => assignments(state, line, on)),
-    safe('Questions', () => questions(state, line, on)),
-
-    section('Notes, changes and sign-off',
-      safe('Actions', () => actions(state, line, value, checks, on)),
-      safe('Try it', () => tryItSection(state, line, value, on)),
-      safe('Judgment', () => judgment(state, line, on)),
-      safe('History', () => history(notes.filter((e) => !e.private))),
+    step(3, 'Explain and decide', 'Write why it moved, deal with review points, then sign off below', so.state === 'signed' ? 'done' : 'now',
+      judged.swing,
+      safe('Review points', () => reviewPoints(state, line, on)),
+      !judged.swing && !can(state.role, 'seepoints') ? h('p', { class: 'muted' }, 'Nothing for you to decide on this number.') : null,
+      signRow(state, line, act),
     ),
+
+    step(4, 'More tools', 'Only when you need them', 'wait', moreTools(state, line, value, notes, trace, act, judged, on)),
+
+
   );
 }
 
@@ -264,8 +261,8 @@ function questions(state, line, on) {
         )))
       : hidden ? null : h('p', { class: 'muted' }, 'No questions on this number.'),
     hidden ? h('p', { class: 'muted' }, `${hidden} private question${hidden === 1 ? '' : 's'} between other people.`) : null,
-    h('div', { class: 'row2' }, to, text),
-    h('div', { class: 'btns' }, ask),
+    can(state.role, 'ask') ? h('div', { class: 'row2' }, to, text) : null,
+    can(state.role, 'ask') ? h('div', { class: 'btns' }, ask) : null,
   );
 }
 
@@ -349,6 +346,48 @@ const safe = (name, build) => {
     return h('section', { class: 'block' }, h('h2', {}, name), h('p', { class: 'muted' }, `This part could not be drawn: ${err.message}`));
   }
 };
+
+const sub = (title, ...children) => h('div', { class: 'sub' }, h('h3', { class: 'sub-title' }, title), children);
+
+/** One numbered card of the Z layout. `done`, `now` or `wait` only changes how the number looks. */
+const step = (n, title, subtitle, mood, ...children) => h('section', { class: `step step-${mood}` },
+  h('span', { class: 'step-n', 'aria-hidden': 'true' }, mood === 'done' ? '✓' : String(n)),
+  h('div', { class: 'step-body' }, h('h2', { class: 'step-title' }, title), h('p', { class: 'muted' }, subtitle), ...children.flat(Infinity)));
+
+/** The buttons of step 4. One tool is open at a time (state.tool), so nothing is on screen until it is asked for. */
+function moreTools(state, line, value, notes, trace, act, judged, on) {
+  const staff = can(state.role, 'seepoints');
+  const openQ = openQuestionCount(state.events, line.key);
+  const tools = [
+    can(state.role, 'evidence') ? ['evidence', 'Evidence', () => addedEvidence(notes, state, line, on)] : null,
+    ['questions', openQ ? `Questions (${openQ} open)` : 'Questions', () => questions(state, line, on)],
+    staff && (can(state.role, 'assign') || assignmentsFor(state.events, line.key).length) ? ['assign', 'Assignments', () => assignments(state, line, on)] : null,
+    can(state.role, 'note') ? ['notes', 'Notes', () => act.note] : null,
+    can(state.role, 'adjust') || can(state.role, 'amend') ? ['change', 'Adjust number', () => act.change] : null,
+    staff && can(state.role, 'note') ? ['try', 'Try a value', () => tryItSection(state, line, value, on)] : null,
+    staff ? ['judgment', 'Judgment', () => judged.rest] : null,
+    can(state.role, 'viewlog') ? ['viewed', 'Who looked', () => viewLog(state)] : null,
+  ].filter(Boolean);
+  const open = tools.find(([id]) => id === state.tool);
+  return [
+    h('div', { class: 'toolbar', role: 'group', 'aria-label': 'More tools' },
+      tools.map(([id, label]) => h('button', {
+        type: 'button', class: `btn${state.tool === id ? ' btn-primary' : ''}`, 'aria-pressed': state.tool === id ? 'true' : 'false',
+        onClick: () => on.tool(state.tool === id ? null : id),
+      }, label))),
+    open ? h('div', { class: 'tool-panel' }, safe(open[1], open[2])) : null,
+  ];
+}
+
+/** The end of step 3: why sign-off is or is not possible, and the button itself. */
+function signRow(state, line, act) {
+  const so = signoffFor(state, line.key);
+  if (!can(state.role, 'signoff') && so.state !== 'signed') return null; // a role that can never sign off does not see the row
+  return h('div', { class: 'signoff-row' },
+    h('span', { class: 'signoff-text' },
+      so.state === 'signed' ? `Signed off by ${so.last.by.name}.` : act.blocked ? act.blocked : 'Ready to sign off.'),
+    can(state.role, 'signoff') ? act.signButton : null);
+}
 
 const section = (title, ...children) => h('section', { class: 'block' }, h('h2', {}, title), children);
 const pill = (status, text) => h('span', { class: `pill p-${status}` }, h('span', { 'aria-hidden': 'true' }, GLYPH[status]), ` ${text}`);
@@ -439,11 +478,7 @@ function verifyBlock(check, state, line, on) {
     type: 'button', class: 'btn',
     onClick: () => on.add(newEvent({ claim: line.key, type: 'verify', check: check.verifyKey, by: { name: who.name, role: who.role }, text: 'Confirmed the copy is counted once.' })),
   }, 'Mark verified');
-  if (!can(state.role, 'verify')) {
-    button.setAttribute('disabled', '');
-    button.setAttribute('title', WHY_NOT.verify);
-  }
-  return h('div', { class: 'verify' }, h('span', { class: 'tag' }, 'Needs verification'), button);
+  return h('div', { class: 'verify' }, h('span', { class: 'tag' }, 'Needs verification'), can(state.role, 'verify') ? button : null);
 }
 
 // ---------- actions (enforced by role) ----------
@@ -520,17 +555,18 @@ function actions(state, line, value, checks, on) {
       }, 'Revert to engine value')
     : null;
 
-  return h('div', { class: 'actions' },
-    h('div', { class: 'action' }, noteBox, addNote),
-    filedEvent(state.events) ? amendAction(state, line, value, who, gate, on) : h('div', { class: 'action' }, h('div', { class: 'row2' }, newValue, reason),
-      h('p', { class: 'muted' }, 'This changes this line only. Lines that use it are not recalculated.'),
-      preview, h('div', { class: 'btns' }, adjust, revert)),
-    h('div', { class: 'action' }, signButton,
-      blocked && can(state.role, 'signoff') ? h('span', { class: 'muted' }, ` ${blocked}`) : null),
-  );
+  return {
+    note: h('div', { class: 'actions' }, h('div', { class: 'action' }, noteBox, addNote)),
+    change: h('div', { class: 'actions' },
+      filedEvent(state.events) ? amendAction(state, line, value, who, gate, on) : h('div', { class: 'action' }, h('div', { class: 'row2' }, newValue, reason),
+        h('p', { class: 'muted' }, 'This changes this line only. Lines that use it are not recalculated.'),
+        preview, h('div', { class: 'btns' }, adjust, revert))),
+    signButton,
+    blocked: blocked && can(state.role, 'signoff') ? blocked : '',
+  };
 }
 
-function history(events) {
+export function history(events) {
   if (!events.length) return h('p', { class: 'muted' }, 'Nothing recorded on this number yet.');
   return h('ol', { class: 'history' },
     [...events].reverse().map((e) => {
@@ -575,7 +611,7 @@ function amendAction(state, line, value, who, gate, on) {
 // ---------- judgment (J1 swing explanation, J2 recorded judgments) ----------
 
 function judgment(state, line, on) {
-  if (!can(state.role, 'seepoints')) return ''; // internal to the firm
+  if (!can(state.role, 'seepoints')) return { swing: null, rest: '' }; // internal to the firm
   const who = actor(state.index.packet, state.role);
   const flag = varianceFor(state).find((f) => f.key === line.key);
   const explained = flag?.explained ?? null; // the server says whether a reason was written
@@ -599,7 +635,7 @@ function judgment(state, line, on) {
       h('p', {}, h('strong', {}, 'Moved against last year. '), `${num(flag.last)} → ${num(flag.now)} (${signed(flag.change)}${flag.pct === null ? ', from zero' : `, ${Math.round(flag.pct)}%`}). The firm asks for a reason when a number moves over 10% and over 1,000.`),
       explained
         ? h('p', { class: 'hist-text' }, h('strong', {}, 'Explained: '), explained.text, ` (${explained.by.name})`)
-        : h('div', {}, why, go, msg));
+        : can(state.role, 'note') ? h('div', {}, why, go, msg) : h('p', { class: 'muted' }, 'No reason has been written yet.'));
   }
 
   // J2: write the judgment down with the authority it rests on
@@ -616,11 +652,13 @@ function judgment(state, line, on) {
   }, 'Record judgment');
   if (!can(state.role, 'decide')) { save.setAttribute('disabled', ''); save.setAttribute('title', WHY_NOT.decide); }
 
-  return h('div', { class: 'actions' },
-    swing,
-    decisions.length ? h('ul', { class: 'std-flags' }, decisions.map((d) => h('li', {}, h('strong', {}, `${DECISION_LABEL[d.category] ?? d.category}: `), d.text, ` — authority: ${d.authority} (${d.by.name})`))) : null,
-    h('div', { class: 'action' }, h('p', { class: 'muted' }, 'An election, due diligence, a penalty or any call you made. Write what you decided and what it rests on.'),
-      h('div', { class: 'row2' }, kind, text), authority, h('div', { class: 'btns' }, save), msg));
+  return {
+    swing: swing ? h('div', { class: 'actions' }, swing) : null,
+    rest: h('div', { class: 'actions' },
+      decisions.length ? h('ul', { class: 'std-flags' }, decisions.map((d) => h('li', {}, h('strong', {}, `${DECISION_LABEL[d.category] ?? d.category}: `), d.text, ` — authority: ${d.authority} (${d.by.name})`))) : null,
+      !can(state.role, 'decide') ? (decisions.length ? null : h('p', { class: 'muted' }, 'No judgments recorded on this number.')) : h('div', { class: 'action' }, h('p', { class: 'muted' }, 'An election, due diligence, a penalty or any call you made. Write what you decided and what it rests on.'),
+        h('div', { class: 'row2' }, kind, text), authority, h('div', { class: 'btns' }, save), msg)),
+  };
 }
 
 /** b15: on the line itself, what the engine changed in the latest version (old and new value). */

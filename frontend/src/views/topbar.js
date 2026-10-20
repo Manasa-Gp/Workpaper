@@ -5,11 +5,9 @@
 
 import { h, clear } from '../dom.js';
 import { ROLES, actor, can } from '../roles.js';
+import { pagesFor } from './pages.js';
 
 let confirmingReset = false;
-
-// Shown in the top bar so you can tell which version of the page your browser is really running.
-const BUILD = 'fi1-freeze-1';
 
 export function renderTopbar(el, state, on) {
   clear(el);
@@ -33,7 +31,7 @@ export function renderTopbar(el, state, on) {
     ? h(
         'button',
         {
-          class: 'btn btn-quiet',
+          class: 'btn btn-quiet reset-btn',
           type: 'button',
           onClick: () => {
             if (!confirmingReset) {
@@ -54,12 +52,17 @@ export function renderTopbar(el, state, on) {
       h('span', { class: 'brand-name' }, 'Trail'),
       h('span', { class: 'brand-sub' }, `${state.index.packet.packet.name} · ${state.index.current.version} (${state.index.current.computed_at.slice(0, 10)})`),
     ),
+    h('nav', { class: 'pagenav', 'aria-label': 'Pages' },
+      pagesFor(state.role).map((p) => h('button', {
+        type: 'button', class: `pagetab${state.page === p.id ? ' is-on' : ''}`,
+        'aria-current': state.page === p.id ? 'page' : null, onClick: () => on.page(p.id),
+      }, p.label)),
+    ),
     h('div', { class: 'role' },
       h('label', { for: 'role-select' }, 'Acting as'),
       select,
       h('span', { class: 'role-note' }, `${who.name} ${summary}`),
-      h('span', { class: 'role-note proto' }, `Prototype: the server enforces what each role may do, but there is no login, so you pick the role here. Build: ${BUILD}`),
-      resetButton,
     ),
+    ...[resetButton].filter(Boolean), // el.append(null) would print the word "null"; on its own at the far right of the bar, away from the role picker
   );
 }

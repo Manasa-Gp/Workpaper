@@ -14,23 +14,11 @@ import { lastBatch } from '../batch.js';
 import { newByKey } from '../lastvisit.js';
 import { signoffFor } from '../serverchecks.js';
 import { effectiveValue, openQuestionCount, openReviewPoints, filedEvent, filedValue } from '../events.js';
-import { inbox } from './inbox.js';
-import { approval } from './approval.js';
-import { activity } from './activity.js';
-import { filing } from './filing.js';
-import { clientCopy } from './clientcopy.js';
-import { notices } from './notice.js';
-import { nextYear } from './nextyear.js';
-import { standards } from './standards.js';
-import { statusBar } from './statuscounts.js';
-import { timeBudget } from './timebudget.js';
-import { viewLogPage } from './viewlogpage.js';
-import { recordsPanel } from './records.js';
 
 const GLYPH = { pass: '✓', warn: '!', fail: '×', na: '·' };
 const WORDS = { pass: 'checks pass', warn: 'look at this', fail: 'a check failed', na: 'calculated, no source documents' };
 
-export function renderPicker(el, state, on) {
+export function renderPicker(el, state, on, batchStrip = null) {
   const fresh = newByKey(state.events, state.since, actor(state.index.packet, state.role).name);
   const lines = state.index.current.lines.filter((l) => l.value !== null && l.value !== undefined);
   const needle = state.filter.trim().toLowerCase();
@@ -54,10 +42,12 @@ export function renderPicker(el, state, on) {
 
   const needAttention = lines.filter((l) => ['warn', 'fail'].includes(state.statusByKey.get(l.key))).length;
 
+  // The batch bar sits in a full-width strip under the status counts, not inside the column.
+  const bar = batchBar(state, on, shown);
+  if (batchStrip) { clear(batchStrip); batchStrip.hidden = !bar; if (bar) batchStrip.append(bar); }
+
   clear(el);
   el.append(
-    h('div', { class: 'panels' }, inbox(state, on), approval(state, on), clientCopy(state), filing(state, on), notices(state, on), recordsPanel(state, on), standards(state, on), timeBudget(state, on), viewLogPage(state, on), nextYear(state), activity(state, on)),
-    statusBar(state),
     h('div', { class: 'picker-head' },
       h('input', {
         id: 'filter', type: 'search', placeholder: 'Find a number, e.g. wages or F1040.1a', value: state.filter,
@@ -67,7 +57,7 @@ export function renderPicker(el, state, on) {
         h('input', { type: 'checkbox', id: 'only-attention', checked: state.onlyAttention, onChange: (e) => on.attention(e.target.checked) }),
         `Needs attention (${needAttention})`,
       ),
-      can(state.role, 'seepoints') ? h('label', { class: 'toggle' },
+      can(state.role, 'note') || can(state.role, 'undo') ? h('label', { class: 'toggle' },
         h('input', { type: 'checkbox', id: 'select-mode', checked: state.selectMode, onChange: (e) => on.selectMode(e.target.checked) }),
         'Select several',
       ) : null,
@@ -77,7 +67,6 @@ export function renderPicker(el, state, on) {
         h('button', { type: 'button', class: 'linkish', onClick: () => on.seen() }, 'Mark all as seen'),
       ) : null,
     ),
-    ...[batchBar(state, on, shown)].filter(Boolean), // el.append would print "null" for a missing bar
     h('div', { class: 'picker-list' },
       groups.size === 0 ? h('p', { class: 'empty' }, 'No numbers match.') : null,
       [...groups].map(([group, items]) =>
@@ -131,6 +120,6 @@ function batchBar(state, on, shown) {
       h('button', { type: 'button', class: 'linkish', onClick: () => on.selectMany(shown.map((l) => l.key)) }, `Select all shown (${shown.length})`),
       h('button', { type: 'button', class: 'linkish', onClick: () => on.selectMany([]) }, 'Clear')),
     text,
-    h('div', { class: 'btns' }, note, verify, undo, last ? h('span', { class: 'muted' }, `Last batch: ${last.count} changes`) : null),
+    h('div', { class: 'btns' }, note, can(state.role, 'verify') ? verify : null, undo, last ? h('span', { class: 'muted' }, `Last batch: ${last.count} changes`) : null),
     state.batchMsg ? h('p', { class: 'muted' }, state.batchMsg) : null);
 }
