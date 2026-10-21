@@ -95,6 +95,7 @@ export function renderClaim(el, state, on) {
     step(3, 'Explain and decide', 'Write why it moved, deal with review points, then sign off below', so.state === 'signed' ? 'done' : 'now',
       judged.swing,
       safe('Review points', () => reviewPoints(state, line, on)),
+      safe('Notes', () => notesBlock(state, line, notes, act)),
       !judged.swing && !can(state.role, 'seepoints') ? h('p', { class: 'muted' }, 'Nothing for you to decide on this number.') : null,
       signRow(state, line, act),
     ),
@@ -354,6 +355,19 @@ const step = (n, title, subtitle, mood, ...children) => h('section', { class: `s
   h('span', { class: 'step-n', 'aria-hidden': 'true' }, mood === 'done' ? '✓' : String(n)),
   h('div', { class: 'step-body' }, h('h2', { class: 'step-title' }, title), h('p', { class: 'muted' }, subtitle), ...children.flat(Infinity)));
 
+/** Step 3: the notes already written on this line, newest first, and the box to add one (for roles that may). */
+function notesBlock(state, line, notes, act) {
+  const list = notes.filter((e) => e.type === 'note' && !e.private).reverse();
+  if (!list.length && !can(state.role, 'note')) return '';
+  return sub('Notes',
+    list.length
+      ? h('ul', { class: 'question-list' }, list.map((e) => h('li', {},
+          h('p', { class: 'hist-head' }, h('strong', {}, e.by.name), ` (${e.by.role}) · ${dayTime(e.at)}`, e.swing ? ' · explains the change' : ''),
+          h('p', { class: 'hist-text' }, e.text))))
+      : h('p', { class: 'muted' }, 'No notes on this number yet.'),
+    can(state.role, 'note') ? act.note : null);
+}
+
 /** The buttons of step 4. One tool is open at a time (state.tool), so nothing is on screen until it is asked for. */
 function moreTools(state, line, value, notes, trace, act, judged, on) {
   const staff = can(state.role, 'seepoints');
@@ -362,7 +376,6 @@ function moreTools(state, line, value, notes, trace, act, judged, on) {
     can(state.role, 'evidence') ? ['evidence', 'Evidence', () => addedEvidence(notes, state, line, on)] : null,
     ['questions', openQ ? `Questions (${openQ} open)` : 'Questions', () => questions(state, line, on)],
     staff && (can(state.role, 'assign') || assignmentsFor(state.events, line.key).length) ? ['assign', 'Assignments', () => assignments(state, line, on)] : null,
-    can(state.role, 'note') ? ['notes', 'Notes', () => act.note] : null,
     can(state.role, 'adjust') || can(state.role, 'amend') ? ['change', 'Adjust number', () => act.change] : null,
     staff && can(state.role, 'note') ? ['try', 'Try a value', () => tryItSection(state, line, value, on)] : null,
     staff ? ['judgment', 'Judgment', () => judged.rest] : null,
