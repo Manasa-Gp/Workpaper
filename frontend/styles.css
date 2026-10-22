@@ -568,3 +568,6 @@ textarea::-webkit-scrollbar-thumb { background: #9aa8b6; border-radius: 999px; b
 .batch-strip .batch-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; border: 0; padding: 0; background: transparent; margin: 0; order: 0; }
 .batch-strip .batch-bar input[type='text'] { flex: 1 1 280px; width: auto; }
 .batch-strip .batch-bar > p { margin: 0; }
+
+.check-items { margin: 6px 0; }
+.check-items ul { margin: 2px 0 4px; padding-left: 18px; }

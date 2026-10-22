@@ -75,7 +75,7 @@ def _():
         checks = checks_of(key)
         note = next(c for c in checks if c.get("verify"))
         assert note["status"] == "pass" and note["verifyKey"] == "dupdoc:D09:D10"
-        assert "not a source of this line" in note["detail"]
+        assert "D10 looks like a copy of D09" in note["detail"] and "D10 is not used" in note["detail"]
         assert not any(c["id"] == "dupdoc" and c["status"] == "warn" for c in checks)
     assert next(c for c in checks_of("F1040.1a") if c["id"] == "tie")["status"] == "pass"
 
@@ -95,6 +95,16 @@ def _():
     assert c["status"] == "fail" and c["said"] == "13,000" and c["other"] == "12,000"
     assert "2026-01-14: 4,000 claimed, 3,000 at the IRS on 2026-01-15" in c["detail"]
     assert worst(checks_of("F1040.26")) == "fail"
+
+
+@test("adjusting the payment line to the IRS figure makes its check pass; the original check is unchanged")
+def _():
+    trace = trace_claim(index, "F1040.26")
+    after = next(c for c in claim_checks(index, trace, 12000) if c["id"] == "pay-fed")
+    assert after["status"] == "pass" and "12,000" in after["detail"] and "adjusted" in after["detail"]
+    still = next(c for c in claim_checks(index, trace, 12500) if c["id"] == "pay-fed")
+    assert still["status"] == "fail" and "500" in still["detail"]
+    assert cross("pay-fed")["status"] == "fail"
 
 
 @test("California estimated payments: 14,000 claimed, 10,500 at the FTB; the 2025-09-15 payment was held for 2024")

@@ -474,10 +474,21 @@ function checkRow(check, state, line, on) {
     h('div', {},
       h('p', { class: 'check-title' }, check.label, waiting ? ' — Waiting for verification' : ` — ${LABEL[check.status]}`),
       h('p', { class: 'check-detail' }, check.detail),
+      check.items ? itemsBlock(check, state, on) : null,
       (check.refs ?? (check.ref ? [check.ref] : [])).map((ref) => h('button', { type: 'button', class: 'linkish', onClick: () => on.source(ref) }, `Show ${ref}`)),
       check.verify ? verifyBlock(check, state, line, on) : null,
     ),
   );
+}
+
+/** The agency's own entries behind a payment check, shown where the problem is. */
+function itemsBlock(check, state, on) {
+  return h('div', { class: 'check-items' },
+    h('p', { class: 'muted' }, check.itemsTitle),
+    h('ul', {}, check.items.map((i) => h('li', {}, `${i.date}: ${i.amount}`)), h('li', {}, h('strong', {}, `Total: ${check.other}`))),
+    check.recordId && state.role !== 'client' && state.role !== 'admin'
+      ? h('button', { type: 'button', class: 'linkish', onClick: () => on.record(check.recordId) }, 'See all on Records')
+      : null);
 }
 
 const verifiedBy = (check, state, line) => verifiedEvent(state.events, line.key, check.verifyKey);

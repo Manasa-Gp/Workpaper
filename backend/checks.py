@@ -275,9 +275,10 @@ def _resolve_duplicate(check, trace, tie):
             source_docs.append(d)
     if check["other"] in source_docs or tie["status"] != "pass":
         return check
-    return {**check, "label": f"Possible copy of {check['other']}", "status": "pass", "verify": True,
+    # check["doc"] is a source of this line; check["other"] is not. So the copy is the one that is not used.
+    return {**check, "label": f"{check['other']} may be a copy of {check['doc']}", "status": "pass", "verify": True,
             "verifyKey": f"dupdoc:{check['doc']}:{check['other']}",
-            "detail": f"{check['doc']} looks like a copy of {check['other']}, but {check['other']} is not a source of this line (its sources are {' and '.join(source_docs)}), and the sources add up: {tie['detail']} Counted once."}
+            "detail": f"{check['other']} looks like a copy of {check['doc']}, which is a source of this line. {check['other']} is not used (the sources are {' and '.join(source_docs)}), and the sources add up: {tie['detail']} Counted once."}
 
 
 def claim_checks(index, trace, adjusted=None):
@@ -308,7 +309,7 @@ def claim_checks(index, trace, adjusted=None):
     adj = _adjusted_mismatch(trace["line"], checks[0], adjusted)
     if adj:
         checks.insert(1, adj)
-    checks.extend(cross_checks_for(index, trace["line"]["key"]))
+    checks.extend(cross_checks_for(index, trace["line"]["key"], adjusted))
     return [_resolve_duplicate(c, trace, checks[0]) for c in checks]
 
 
@@ -358,7 +359,9 @@ def _payment_check(cid, label, line, agency, who, as_of, held=()):
     if not line or not is_num(line["value"]):
         return None
     total = sum(p["amount"] for p in agency)
-    base = {"id": cid, "label": label, "lines": [line["key"]], "refs": [], "said": fmt(line["value"]), "other": fmt(total)}
+    base = {"id": cid, "label": label, "lines": [line["key"]], "refs": [], "said": fmt(line["value"]), "other": fmt(total),
+            "items": [{"date": p["date"], "amount": fmt(p["amount"])} for p in agency], "itemsTitle": f"Payments {who} shows", "recordId": "payments",
+            "agencyTotal": total, "who": who, "asOf": as_of}
     if abs(line["value"] - total) < 0.5:
         return {**base, "status": "pass", "detail": f"The return claims {fmt(line['value'])} and {who} shows {fmt(total)} (as of {as_of}). They agree."}
     why = _payment_differences(parse_dated(line.get("note")), agency, who, list(held))
@@ -697,9 +700,21 @@ def cross_checks(index):
     return index._cross
 
 
-def cross_checks_for(index, key):
-    return [{"id": c["id"], "label": c["label"], "status": c["status"], "detail": c["detail"], "refs": c["refs"], "ref": c["refs"][0] if c["refs"] else None}
-            for c in cross_checks(index) if key in c["lines"]]
+def _with_adjusted(c, adjusted):
+    """A payment check read against the number as adjusted, not the packet's original. The original stays in the event log."""
+    if not c["id"].startswith("pay-") or not is_num(adjusted):
+        return c
+    total, who = c["agencyTotal"], c["who"]
+    if abs(adjusted - total) < 0.5:
+        return {**c, "status": "pass", "said": fmt(adjusted), "detail": f"The number now says {fmt(adjusted)} (adjusted) and {who} shows {fmt(total)} (as of {c['asOf']}). They agree."}
+    more_less = "less" if adjusted > total else "more"
+    return {**c, "status": "fail", "said": fmt(adjusted), "detail": f"The number now says {fmt(adjusted)} (adjusted). {who[0].upper() + who[1:]} shows {fmt(total)} (as of {c['asOf']}), {fmt(abs(adjusted - total))} {more_less}."}
+
+
+def cross_checks_for(index, key, adjusted=None):
+    return [{"id": c["id"], "label": c["label"], "status": c["status"], "detail": c["detail"], "refs": c["refs"], "ref": c["refs"][0] if c["refs"] else None,
+             **{k: c[k] for k in ("items", "itemsTitle", "recordId", "other") if k in c}}
+            for c in (_with_adjusted(c, adjusted) for c in cross_checks(index) if key in c["lines"])]
 
 
 # ---------- the sign-off blocker (frontend/src/events.js: signoffBlocker) ----------

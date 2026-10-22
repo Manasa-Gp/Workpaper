@@ -49,7 +49,7 @@ test('the D09/D10 duplicate on F1040.1a and 25a passes but asks a person to veri
     const note = checks.find((c) => c.verify);
     assert.equal(note.status, 'pass');
     assert.equal(note.verifyKey, 'dupdoc:D09:D10');
-    assert.match(note.detail, /not a source of this line/);
+    assert.match(note.detail, /D10 looks like a copy of D09.*D10 is not used/);
     assert.ok(!checks.some((c) => c.id === 'dupdoc' && c.status === 'warn'));
   }
 });
